@@ -1,0 +1,16 @@
+log:
+  level: debug
+
+serve:
+  read:
+    port: 4466
+  write:
+    port: 4467
+
+namespaces:
+  - id: 0
+    name: User
+  - id: 1
+    name: Document
+  - id: 2
+    name: Division

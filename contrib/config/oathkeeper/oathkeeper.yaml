@@ -1,0 +1,50 @@
+serve:
+  proxy:
+    port: 4455
+  api:
+    port: 4456
+
+errors:
+  fallback:
+    - json
+
+log:
+  level: debug
+  format: json
+
+access_rules:
+  matching_strategy: glob
+  repositories:
+    - file:///etc/config/oathkeeper/rules.yaml
+
+authenticators:
+  noop:
+    enabled: true
+  cookie_session:
+    enabled: true
+    config:
+      check_session_url: http://vault-kratos:4433/sessions/whoami
+      preserve_query: true
+
+authorizers:
+  allow:
+    enabled: true
+  remote_json:
+    enabled: true
+    config:
+      remote: http://vault-keto:4466/check
+      payload: |
+        {
+          "subject": "{{ print .Subject }}",
+          "resource": "{{ print .MatchContext.RegexpCaptureGroups.index }}",
+          "action": "{{ print .MatchContext.Method }}"
+        }
+
+mutators:
+  noop:
+    enabled: true
+  header:
+    enabled: true
+    config:
+      headers:
+        X-User-Id: "{{ .Subject }}"

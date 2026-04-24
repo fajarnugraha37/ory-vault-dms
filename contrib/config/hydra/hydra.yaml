@@ -1,0 +1,16 @@
+serve:
+  public:
+    port: 4444
+  admin:
+    port: 4445
+
+urls:
+  self:
+    issuer: http://auth.ory-vault.test/
+  consent: http://ory-vault.test/consent
+  login: http://ory-vault.test/login
+  logout: http://ory-vault.test/logout
+
+strategies:
+  pkce:
+    enforced: true

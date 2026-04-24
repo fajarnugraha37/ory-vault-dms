@@ -167,3 +167,4 @@ desktop.ini
 
 # Docker
 .docker
+pgdata
