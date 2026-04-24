@@ -10,7 +10,9 @@ log:
 
 courier:
   smtp:
-    connection_uri: smtps://test:test@mailslurp.com
+    connection_uri: smtp://vault-mailpit:1025/?skip_ssl_verify=true
+    from_address: noreply@ory-vault.test
+    from_name: ORY Vault DMS
 
 identity:
   default_schema_id: default

@@ -204,6 +204,26 @@ services:
         limits:
           memory: 512M
 
+  vault-mailpit:
+    image: axllent/mailpit
+    container_name: vault-mailpit
+    restart: unless-stopped
+    ports:
+      - "8025:8025" # Web UI
+      - "1025:1025" # SMTP
+    networks:
+      - ory-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8025/api/v1/info || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+
 networks:
   ory-network:
     driver: bridge
