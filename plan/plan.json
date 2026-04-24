@@ -1,0 +1,46 @@
+[
+    {
+        "iteration": "iteration-0001",
+        "status": "done"
+    },
+    {
+        "iteration": "iteration-0002",
+        "status": "done"
+    },
+    {
+        "iteration": "iteration-0003",
+        "status": "backlog"
+    },
+    {
+        "iteration": "iteration-0004",
+        "status": "backlog"
+    },
+    {
+        "iteration": "iteration-0005",
+        "status": "backlog"
+    },
+    {
+        "iteration": "iteration-0006",
+        "status": "backlog"
+    },
+    {
+        "iteration": "iteration-0007",
+        "status": "backlog"
+    },
+    {
+        "iteration": "iteration-0008",
+        "status": "backlog"
+    },
+    {
+        "iteration": "iteration-0009",
+        "status": "backlog"
+    },
+    {
+        "iteration": "iteration-0010",
+        "status": "backlog"
+    },
+    {
+        "iteration": "iteration-0011",
+        "status": "backlog"
+    }
+]
