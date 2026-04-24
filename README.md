@@ -1,0 +1,107 @@
+# ORY-VAULT DMS
+
+A **Secure Document Management System (DMS)** with 3rd-party delegation built natively on the **Ory Stack**, **Go**, and **Next.js**.
+
+The system implements a **Zero-Trust** edge proxy architecture to completely separate identity, authentication, authorization, and 3rd-party access delegation from the core backend logic. It enforces a highly granular permission model (Google Zanzibar) using Ory Keto.
+
+## Architecture & Core Components
+
+1. **Ingress Layer (Nginx)**: Gateway for routing traffic to specific internal subdomains on port 80.
+2. **Security Edge Proxy (Ory Oathkeeper)**: Acts as an Identity-Aware Proxy (IAP) handling token verification, cookie sessions, and injecting `X-User-Id` headers.
+3. **Identity Provider (Ory Kratos)**: Handles all user data, registration flows, and MFA. The Go backend **does not** own a `users` table.
+4. **Permissions Engine (Ory Keto)**: Enforces access control lists (ACL) using Zanzibar Object-Permission Language (OPL) via gRPC.
+5. **Delegation (Ory Hydra)**: OAuth2 provider allowing 3rd-party clients to access DMS APIs securely.
+6. **Core Backend (Go 1.22)**: Stateless REST API, completely unaware of password/identity logic; solely relies on Oathkeeper's `X-User-Id` and asks Keto via gRPC for permission checks.
+7. **Frontend UI (Next.js)**: Modern dashboard, Server-Side Generated (SSG) with client-side SWR data fetching, interacting with the system via shared cookies.
+8. **Database (PostgreSQL 16)**: Multi-schema design (`app`, `kratos`, `keto`, `hydra`) for data isolation on a single database instance (`ory_vault`).
+
+## Tech Stack
+
+- **Backend**: Go (Golang) 1.22, Chi router, Keto gRPC Client
+- **Frontend**: Next.js, React, Tailwind CSS, SWR
+- **Identity & Access**: Ory Kratos, Ory Keto, Ory Oathkeeper, Ory Hydra
+- **Infrastructure**: Docker & Docker Compose, Nginx
+- **Database**: PostgreSQL 16
+
+## Getting Started
+
+### Prerequisites
+
+- Docker and Docker Compose installed.
+- Go 1.22+ and Node.js 24+ (if running outside containers).
+- Make utility installed.
+
+### 1. Configure Local DNS
+
+Add the following entries to your OS's host file (`/etc/hosts` on Linux/macOS, or `C:\Windows\System32\drivers\etc\hosts` on Windows) to route local domains to your Docker environment:
+
+```text
+127.0.0.1   auth.ory-vault.test
+127.0.0.1   api.ory-vault.test
+127.0.0.1   app.ory-vault.test
+127.0.0.1   mail.ory-vault.test
+127.0.0.1   ory-vault.test
+```
+
+### 2. Build & Start the Environment
+
+Use the provided `Makefile` to bootstrap the application:
+
+```bash
+# Build images and start containers in the background
+make build
+
+# Alternatively, if images are already built
+make up
+```
+
+### 3. Run Database Migrations
+
+Once PostgreSQL is ready, run the database migrations for Kratos and Keto:
+
+```bash
+make migrate
+```
+
+### 4. Verify System Health
+
+Ensure all containers are running and DNS is mapped properly:
+
+```bash
+make status
+# Or check the API explicitly
+make check
+```
+
+You can view the logs of any specific service using:
+
+```bash
+make logs service=vault-backend
+```
+
+## Access Points
+
+- **DMS Frontend**: `http://ory-vault.test`
+- **Kratos Public (Auth UI/APIs)**: `http://auth.ory-vault.test`
+- **Backend APIs (Protected via Oathkeeper)**: `http://api.ory-vault.test/api/...`
+- **Mailpit (Local SMTP UI)**: `http://mail.ory-vault.test`
+
+## Repository Structure
+
+```text
+.
+├── .context/           # Architectural invariants, TRD, PRD, Master Spec
+├── contrib/            # Core configurations
+│   ├── config/         # Ory configurations (kratos, keto, hydra, oathkeeper)
+│   ├── db/             # Initial PostgreSQL schemas
+│   └── nginx/          # Nginx gateway configs
+├── dms-backend/        # Go 1.22 Stateless Core API
+├── dms-ui/             # Next.js Frontend Dashboard
+├── plan/               # Markdown files documenting sprint/iteration plans
+├── docker-compose.yaml # Services infrastructure orchestration
+└── Makefile            # Local development automation
+```
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
