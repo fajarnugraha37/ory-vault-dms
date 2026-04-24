@@ -1,9 +1,8 @@
-# version: '3.8' (obsolete)
-
 services:
   vault-db:
     image: postgres:16-alpine
     container_name: vault-db
+    restart: unless-stopped
     environment:
       - POSTGRES_DB=ory_vault
       - POSTGRES_USER=ory
@@ -15,12 +14,24 @@ services:
       - ory-network
     ports:
       - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ory -d ory_vault"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
 
   vault-kratos:
     image: oryd/kratos:v1.1
     container_name: vault-kratos
+    restart: unless-stopped
     depends_on:
-      - vault-db
+      vault-db:
+        condition: service_healthy
     ports:
       - "4433:4433" # public
       - "4434:4434" # admin
@@ -31,12 +42,24 @@ services:
     command: serve -c /etc/config/kratos/kratos.yaml --dev
     networks:
       - ory-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:4434/health/ready || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 256M
 
   vault-keto:
     image: oryd/keto:v0.11
     container_name: vault-keto
+    restart: unless-stopped
     depends_on:
-      - vault-db
+      vault-db:
+        condition: service_healthy
     ports:
       - "4466:4466" # read
       - "4467:4467" # write
@@ -47,12 +70,24 @@ services:
     command: serve -c /etc/config/keto/keto.yaml
     networks:
       - ory-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:4466/health/ready || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 256M
 
   vault-oathkeeper:
     image: oryd/oathkeeper:v0.40
     container_name: vault-oathkeeper
+    restart: unless-stopped
     depends_on:
-      - vault-kratos
+      vault-kratos:
+        condition: service_healthy
     ports:
       - "4455:4455" # proxy
       - "4456:4456" # api
@@ -61,12 +96,24 @@ services:
     command: serve -c /etc/config/oathkeeper/oathkeeper.yaml
     networks:
       - ory-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:4456/health/ready || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 128M
 
   vault-hydra:
     image: oryd/hydra:v2.2
     container_name: vault-hydra
+    restart: unless-stopped
     depends_on:
-      - vault-db
+      vault-db:
+        condition: service_healthy
     ports:
       - "4444:4444" # public
       - "4445:4445" # admin
@@ -77,36 +124,85 @@ services:
     command: serve -c /etc/config/hydra/hydra.yaml all --dev
     networks:
       - ory-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:4445/health/ready || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 256M
 
   vault-gateway:
     image: nginx:alpine
     container_name: vault-gateway
+    restart: unless-stopped
     depends_on:
-      - vault-oathkeeper
-      - vault-kratos
+      vault-oathkeeper:
+        condition: service_healthy
+      vault-kratos:
+        condition: service_healthy
+      vault-ui:
+        condition: service_started
     ports:
       - "80:80"
     volumes:
       - ./contrib/nginx/default.conf:/etc/nginx/conf.d/default.conf
     networks:
       - ory-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    deploy:
+      resources:
+        limits:
+          memory: 128M
 
   vault-backend:
     build:
       context: ./dms-backend
     container_name: vault-backend
+    restart: unless-stopped
     depends_on:
-      - vault-db
-      - vault-keto
+      vault-db:
+        condition: service_healthy
+      vault-keto:
+        condition: service_healthy
     networks:
       - ory-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 256M
 
   vault-ui:
     build:
       context: ./dms-ui
     container_name: vault-ui
+    restart: unless-stopped
     networks:
       - ory-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
 
 networks:
   ory-network:

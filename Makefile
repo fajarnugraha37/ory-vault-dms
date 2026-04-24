@@ -1,12 +1,19 @@
+.PHONY: init up down build restart migrate status clean logs logs-backend ps check
+
 init:
 	mkdir -p contrib/db contrib/nginx contrib/config/kratos contrib/config/keto contrib/config/oathkeeper contrib/config/hydra dms-backend dms-ui tools
 	
-# Makefile
 up:
 	docker-compose up -d
 
+build:
+	docker-compose up -d --build
+
 down:
 	docker-compose down
+
+restart:
+	docker-compose restart
 
 # target: migrasi database (jalankan setelah postgres ready)
 migrate:
@@ -42,6 +49,4 @@ ps:
 check:
 	docker-compose ps
 	ping -c 1 auth.ory-vault.test
-	curl -I http://api.ory-vault.test/api/health
-
-	
+	curl -I http://api.ory-vault.test/health
