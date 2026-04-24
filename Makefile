@@ -17,6 +17,9 @@ down:
 	docker-compose down
 
 restart:
+	docker compose restart $(service)
+
+restart-all:
 	docker-compose restart
 
 # target: migrasi database (jalankan setelah postgres ready)
@@ -42,10 +45,10 @@ reg-client:
 	docker exec -it vault-backend go run /app/tools/register-client.go
 
 logs:
-	docker-compose logs -f
+	docker compose logs -f $(service) | Tee-Object -FilePath "$(service)"
 
-logs-backend:
-	docker logs -f vault-backend
+logs-all:
+	docker compose logs -f | Tee-Object -FilePath "auth-lab.log"
 
 ps:
 	docker-compose ps
