@@ -24,10 +24,26 @@
               "via": "email"
             }
           }
+        },
+        "first_name": {
+          "type": "string",
+          "title": "First Name"
+        },
+        "last_name": {
+          "type": "string",
+          "title": "Last Name"
+        },
+        "division": {
+          "type": "string",
+          "title": "Division",
+          "enum": ["Engineering", "HR", "Finance", "Legal"]
         }
       },
       "required": [
-        "email"
+        "email",
+        "first_name",
+        "last_name",
+        "division"
       ],
       "additionalProperties": false
     }

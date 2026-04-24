@@ -9,6 +9,10 @@ up:
 build:
 	docker-compose up -d --build
 
+# target: rebuild a specific service (e.g., make rebuild service=vault-ui)
+rebuild:
+	docker-compose up -d --no-deps --build $(service)
+
 down:
 	docker-compose down
 

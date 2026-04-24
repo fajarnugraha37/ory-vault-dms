@@ -145,7 +145,7 @@ services:
       vault-kratos:
         condition: service_healthy
       vault-ui:
-        condition: service_started
+        condition: service_healthy
     ports:
       - "80:80"
     volumes:
@@ -194,7 +194,7 @@ services:
     networks:
       - ory-network
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:3000 || exit 1"]
+      test: ["CMD-SHELL", "curl -f http://localhost:3000 || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 3

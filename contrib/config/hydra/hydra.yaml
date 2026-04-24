@@ -12,5 +12,4 @@ urls:
   logout: http://ory-vault.test/logout
 
 strategies:
-  pkce:
-    enforced: true
+  access_token: opaque
