@@ -6,11 +6,14 @@
 - stack: Go (Backend), Next.js SSG (Frontend), Ory (Kratos, Hydra, Keto, Oathkeeper).
 - database: Postgres (Multi-schema: kratos, keto, hydra, app).
 - local domains: auth.ory-vault.test, api.ory-vault.test, ory-vault.test.
+- Security First: All internal backend routes must be protected by the AuthMiddleware which verifies the RS256 JWT from Oathkeeper.
+- Error Handling: Always implement error handler and logging.
+- Logging: Use structured logging (JSON format) if possible
 
 ## technical stack
 
 - core: Ory Kratos (Identity), Keto (Permissions), Hydra (OAuth2), Oathkeeper (Proxy)
-- infra: Docker Compose, Nginx (Ingress), Postgres 16 (Multi-schema)
+- infra: Docker Compose (Single Network: ory-network), Nginx (Ingress), Postgres 16 (Multi-schema)
 - apps: Go 1.22 (Backend), Next.js SSG (Frontend)
 
 ## project phases
