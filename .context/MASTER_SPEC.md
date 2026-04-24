@@ -5,7 +5,7 @@
 - goal: secure document management with 3rd party delegation.
 - stack: Go (Backend), Next.js SSG (Frontend), Ory (Kratos, Hydra, Keto, Oathkeeper).
 - database: Postgres (Multi-schema: kratos, keto, hydra, app).
-- local domains: auth.ory-vault.test, api.ory-vault.test, ory-vault.test.
+- local domains: auth.ory-vault.test, api.ory-vault.test, app.ory-vault.test, mail.ory-vault.test, ory-vault.test.
 - Security First: All internal backend routes must be protected by the AuthMiddleware which verifies the RS256 JWT from Oathkeeper.
 - Error Handling: Always implement error handler and logging.
 - Logging: Use structured logging (JSON format) if possible
