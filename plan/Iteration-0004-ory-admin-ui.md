@@ -2,7 +2,7 @@
 
 ## Objektif
 
-Membangun kapabilitas manajemen identitas (Admin UI) yang 100% mematuhi prinsip **Zero Trust**. Daripada menggunakan *image* pihak ketiga yang langsung menembak API Admin Kratos (sehingga kehilangan jejak audit dan *access control*), kita akan membangun **Admin API Wrapper** di Go Backend dan antarmuka di Next.js. 
+Membangun kapabilitas manajemen identitas (Admin UI) yang 100% mematuhi prinsip **Zero Trust**. Daripada menggunakan *image* pihak ketiga yang langsung menembak API Admin Kratos (sehingga kehilangan jejak audit dan *access control*), kita akan membangun **Admin API Wrapper** di Go Backend dan antarmuka di Next.js.
 
 Pendekatan ini memastikan semua tindakan admin melewati Oathkeeper (JWT), divalidasi oleh Go Backend (Audit/Authz), sebelum diteruskan secara internal ke Kratos Admin API.
 
@@ -24,7 +24,7 @@ Pendekatan ini memastikan semua tindakan admin melewati Oathkeeper (JWT), divali
 
 **Matlamat**: Membuat *proxy* internal di Go Backend yang mengamankan pemanggilan ke Kratos Admin API.
 
-1. **Buat Endpoint Admin**: 
+1. **Buat Endpoint Admin**:
    - `GET /api/admin/identities` (List users)
    - `DELETE /api/admin/identities/{id}` (Delete user)
    - `PUT /api/admin/identities/{id}` (Update user traits/division)

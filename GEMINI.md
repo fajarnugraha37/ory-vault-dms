@@ -40,6 +40,9 @@ If the user reports a "Connection Refused" error:
 
 ## 5. CODE STYLE
 
-- Go: Standard library preferred. Minimal frameworks (use `chi` for routing).
 - Next.js: Tailwind CSS only. Use `axios` with `withCredentials: true`.
 - YAML: Strictly valid 3.8 format for Docker Compose.
+
+---
+**IMPLEMENTATION RULE (NO DIY):**
+Hindari melakukan implementasi kustom (DIY/Do It Yourself) jika sudah ada library atau framework yang mumpuni. Gunakan library pihak ketiga yang teruji, populer, dan **secara aktif dipelihara (actively maintained)**. DILARANG KERAS menggunakan library yang sudah ditinggalkan (*deprecated* atau *unmaintained*).
