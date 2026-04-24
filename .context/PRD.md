@@ -43,7 +43,7 @@ membangun **ory-vault**, sebuah dms yang menggunakan ekosistem ory secara utuh. 
 
 * bertindak sebagai **zero-trust proxy**.
 * tugas: memvalidasi session cookie kratos atau jwt token hydra.
-* output: menyuntikkan header `X-User-Id` (subject) ke dms-backend. backend dilarang melakukan pengecekan session sendiri.
+* output: menyuntikkan Signed JWT (ID Token) ke dms-backend. backend dilarang melakukan pengecekan session sendiri.
 
 ### 4. granular permissions (ory keto)
 
@@ -74,3 +74,4 @@ membangun **ory-vault**, sebuah dms yang menggunakan ekosistem ory secara utuh. 
 
 * **junior dev focus**: pengembang hanya perlu fokus pada penulisan middleware di go yang membaca header `X-User-Id` dan memanggil gRPC keto. jangan biarkan pengembang memodifikasi konfigurasi `oathkeeper.yaml` tanpa supervisi architect.
 * **ai agent usage**: gunakan file `GEMINI.md` dan `MASTER_SPEC.md` untuk mengunci konteks agen agar tidak terjadi "config drift".
+.

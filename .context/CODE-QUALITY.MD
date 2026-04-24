@@ -4,7 +4,7 @@
 
 - **Error Handling**: Dilarang menggunakan `_`. Semua error wajib di-handle atau di-log.
 - **Strict Typing**: Gunakan struct untuk request/response body. Dilarang menggunakan `map[string]interface{}`.
-- **Middleware**: Autentikasi hanya boleh dilakukan di middleware dengan membaca header `X-User-Id`.
+- **Middleware**: Autentikasi hanya boleh dilakukan di middleware dengan memvalidasi Signed JWT dari Oathkeeper.
 
 ## 2. next.js (frontend)
 
@@ -20,4 +20,4 @@
 ## 4. logging
 
 - Gunakan format JSON untuk semua log container agar mudah di-parse di masa depan.
-- Log backend wajib menyertakan identitas subjek dari `X-User-Id`.
+- Log backend wajib menyertakan identitas subjek dari JWT.

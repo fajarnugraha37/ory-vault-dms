@@ -11,7 +11,7 @@ The system implements a **Zero-Trust** edge proxy architecture to completely sep
 3. **Identity Provider (Ory Kratos)**: Handles all user data, registration flows, and MFA. The Go backend **does not** own a `users` table.
 4. **Permissions Engine (Ory Keto)**: Enforces access control lists (ACL) using Zanzibar Object-Permission Language (OPL) via gRPC.
 5. **Delegation (Ory Hydra)**: OAuth2 provider allowing 3rd-party clients to access DMS APIs securely.
-6. **Core Backend (Go 1.22)**: Stateless REST API, completely unaware of password/identity logic; solely relies on Oathkeeper's `X-User-Id` and asks Keto via gRPC for permission checks.
+6. **Core Backend (Go 1.22)**: Stateless REST API, completely unaware of password/identity logic; solely relies on validating Oathkeeper's Signed JWT and asks Keto via gRPC for permission checks.
 7. **Frontend UI (Next.js)**: Modern dashboard, Server-Side Generated (SSG) with client-side SWR data fetching, interacting with the system via shared cookies.
 8. **Database (PostgreSQL 16)**: Multi-schema design (`app`, `kratos`, `keto`, `hydra`) for data isolation on a single database instance (`ory_vault`).
 

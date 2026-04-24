@@ -34,4 +34,4 @@ Implement OAuth2 delegation using Ory Hydra to allow third-party applications to
 1. **Consent Flow**: Initiate an OAuth2 Authorization Code flow (e.g., using Postman or a simple script). The browser should redirect to the Next.js login/consent screen and successfully return an authorization code.
 2. **Token Issuance**: Exchange the authorization code for an Access Token via Hydra's token endpoint.
 3. **API Access via Token**: Make a request to the protected Go Backend (`http://api.ory-vault.test/api/documents`) using the `Authorization: Bearer <token>` header.
-4. **Verification**: Oathkeeper must validate the token with Hydra, inject the `X-User-Id` of the authorizing user, and the Go backend must return `200 OK` (assuming Keto permissions also pass).
+4. **Verification**: Oathkeeper must validate the token with Hydra, inject the Signed JWT containing the authorizing user's `sub`, and the Go backend must return `200 OK` (assuming Keto permissions also pass).

@@ -24,5 +24,6 @@
 1. User meminta data ke `api.ory-vault.test`.
 2. Nginx meneruskan ke Oathkeeper.
 3. Oathkeeper bertanya ke Kratos: "Apakah cookie ini punya session?"
-4. Jika ya, Oathkeeper menyuntikkan `X-User-Id` dan meneruskan ke Go Backend.
-5. Go Backend bertanya ke Keto via gRPC: "Apakah `X-User-Id` ini boleh baca Dokumen A?"
+4. Jika ya, Oathkeeper menyuntikkan Signed JWT (ID Token) dan meneruskan ke Go Backend.
+5. Go Backend bertanya ke Keto via gRPC: "Apakah subjek dari JWT ini boleh baca Dokumen A?"
+ A?"

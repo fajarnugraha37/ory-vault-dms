@@ -22,7 +22,7 @@ Finalize the user experience by polishing the Next.js frontend, implementing rob
 ### 3. Production Hardening (Infrastructure & Backend)
 
 - **Image Versioning Audit**: Audit `docker-compose.yaml` to ensure absolutely no `:latest` tags are used for any image. Pin all images to specific versions.
-- **Structured Logging (Go)**: Verify the Go backend implements structured JSON logging (e.g., using `slog` or `logrus`) and consistently injects the `X-User-Id` into log contexts for auditability.
+- **Structured Logging (Go)**: Verify the Go backend implements structured JSON logging (e.g., using `slog` or `logrus`) and consistently injects the JWT `sub` into log contexts for auditability.
 - **Security Headers**: Add strict security headers (e.g., HSTS, Content-Security-Policy, X-Frame-Options) to the Nginx `vault-gateway` configuration.
 - **Next.js SSG Safety Check**: Audit all Next.js pages to guarantee that no sensitive API calls are made during Server-Side Generation (SSG); ensure all authenticated requests happen purely on the client side (`useEffect` or `useSWR`).
 

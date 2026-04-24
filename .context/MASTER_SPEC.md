@@ -67,7 +67,7 @@
 
 - frontend to proxy: http/1.1 with shared cookies.
 - backend to keto: gRPC (4466 read / 4467 write).
-- proxy to backend: http/1.1 with `X-User-Id` header injection.
+- proxy to backend: http/1.1 with Signed JWT (id_token mutator) injection.
 
 ## infrastructure mapping
 

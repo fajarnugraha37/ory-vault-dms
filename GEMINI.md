@@ -16,7 +16,7 @@ You MUST fail the task if these are violated:
 
 - DATABASE: Use search_path in DSN (e.g., `?search_path=kratos`). NEVER use the 'public' schema.
 - KETO: Connection must be gRPC via port 4466. NO REST for backend logic.
-- OATHKEEPER: All upstream logic assumes `X-User-Id` is present. Never implement session checks in Go; trust the header.
+- OATHKEEPER: All upstream logic assumes a Signed JWT from Oathkeeper is present. Never implement session checks in Go; validate the JWT.
 - DOMAINS: Only use `.test` domains defined in .context/MASTER_SPEC.md.
 
 ## 3. WORKFLOW: ATOMIC TASKING

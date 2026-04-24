@@ -4,7 +4,7 @@
 
 1. semua identitas user adalah milik **Ory Kratos**. Backend dilarang memiliki tabel `users` sendiri.
 2. sistem menggunakan pola **Zero-Trust**. Kehadiran di dalam jaringan `ory-network` tidak berarti memiliki akses.
-3. Trust diberikan hanya jika request memiliki header `X-User-Id` yang divalidasi oleh **Ory Oathkeeper**.
+3. Trust diberikan hanya jika request memiliki Signed JWT yang divalidasi oleh **Ory Oathkeeper**.
 
 ## article II: database isolation
 

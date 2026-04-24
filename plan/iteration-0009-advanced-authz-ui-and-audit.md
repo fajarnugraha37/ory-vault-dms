@@ -17,7 +17,7 @@ Implement dynamic frontend features based on real-time permission evaluation fro
 ### 2. Authorization Audit Trail
 
 - **Audit Logging Middleware**: Enhance the Go backend to log a structured JSON audit event every time an authorization decision is made (both granted and denied).
-  - Log format must include: `timestamp`, `subject_id` (from `X-User-Id`), `action` (e.g., `read`, `share`), `resource_id` (e.g., `document:123`), and `decision` (`allowed` / `denied`).
+  - Log format must include: `timestamp`, `subject_id` (from JWT `sub`), `action` (e.g., `read`, `share`), `resource_id` (e.g., `document:123`), and `decision` (`allowed` / `denied`).
 - **Relation Tuple Tracking**: Log an audit event whenever a document's relation tuple is modified (e.g., when a user shares a document with another user).
 
 ### 3. Manager/Division Inheritance Verification
