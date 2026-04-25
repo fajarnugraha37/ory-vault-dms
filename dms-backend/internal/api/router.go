@@ -5,13 +5,13 @@ import (
 	"log"
 	"net/http"
 
+	"github.com/MicahParks/keyfunc/v3"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
-	"github.com/MicahParks/keyfunc/v3"
 	"github.com/nugra/ory-vault/dms-backend/internal/handler"
+	"github.com/nugra/ory-vault/dms-backend/internal/kratos"
 	internal_mw "github.com/nugra/ory-vault/dms-backend/internal/middleware"
 	"github.com/nugra/ory-vault/dms-backend/internal/store"
-	"github.com/nugra/ory-vault/dms-backend/internal/kratos"
 )
 
 func NewRouter(s *store.Store, k *kratos.Client, kf keyfunc.Keyfunc) http.Handler {
@@ -40,15 +40,15 @@ func NewRouter(s *store.Store, k *kratos.Client, kf keyfunc.Keyfunc) http.Handle
 	})
 
 	h := handler.NewAdminHandler(s, k)
-	
+
 	// Admin API - FLAT ROUTES ONLY
 	r.Route("/admin-api", func(r chi.Router) {
 		r.Use(internal_mw.AuthMiddleware(kf))
-		r.Use(internal_mw.AdminOnly(s))
+		r.Use(internal_mw.AdminOnly(s, k))
 
 		r.Get("/audit", h.GetAuditLogs)
 		r.Get("/identities", h.ListIdentities)
-		
+
 		// Identities - Full ID Routes
 		r.Get("/identities/{id}", h.GetIdentity)
 		r.Delete("/identities/{id}", h.DeleteIdentity)
@@ -56,7 +56,7 @@ func NewRouter(s *store.Store, k *kratos.Client, kf keyfunc.Keyfunc) http.Handle
 		r.Patch("/identities/{id}/traits", h.PatchTraits)
 		r.Post("/identities/{id}/recovery", h.PostRecovery)
 		r.Post("/identities/{id}/verify", h.PostVerify)
-		
+
 		// Sessions - Full ID Routes
 		r.Get("/identities/{id}/sessions", h.ListSessions)
 		r.Delete("/identities/{id}/sessions", h.RevokeAllSessions)
