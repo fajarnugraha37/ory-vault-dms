@@ -73,6 +73,12 @@ services:
       - ./contrib/config/kratos:/etc/config/kratos
     networks:
       - ory-network
+    healthcheck:
+      test: ["CMD-SHELL", "ps aux | grep \"kratos courier watch\" || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
 
   vault-keto:
     image: oryd/keto:v0.11
@@ -180,6 +186,13 @@ services:
       - internal-certs:/etc/nginx/certs/internal:ro
     networks:
       - ory-network
+    healthcheck:
+      test: ["CMD-SHELL", "nginx -t && pgrep nginx || exit 1"]
+      interval: 10s
+
+      timeout: 5s
+      retries: 3
+      start_period: 5s
 
   vault-gateway-certs:
     image: smallstep/step-cli
