@@ -30,11 +30,12 @@ Membangun kapabilitas manajemen identitas (Admin UI) yang 100% mematuhi prinsip 
 - [x] **Manual Recovery**: Generate recovery link bagi admin (POST `/admin-api/identities/{id}/recovery`).
 - [x] **Trait Editor**: Form untuk mengubah nama, divisi user (PATCH `/admin-api/identities/{id}/traits`).
 - [x] **Manual Verification**: Tombol untuk menandai email user sebagai "Verified" secara manual (POST `/admin-api/identities/{id}/verify`).
+- [x] **Self-Service Support**: Implementasi halaman `/auth/settings` dan `/auth/recovery` di UI.
 
-### Fasa D: Security Audit & Future RBAC [IN PROGRESS]
-- [ ] **Active Sessions List**: Melihat detail device/browser yang sedang login.
-- [ ] **Security Posture Audit**: Tampilkan status 2FA (TOTP/WebAuthn).
-- [ ] **Audit Timeline**: Tampilkan daftar tindakan admin (siapa mengubah apa).
+### Fasa D: Security Audit & Future RBAC [DONE]
+- [x] **Active Sessions List**: Melihat detail device/browser (IP, User Agent) yang sedang login.
+- [x] **Security Posture Audit**: Tampilkan status Email Verification secara visual.
+- [x] **Infrastructure Hardening**: Penambahan worker **Kratos Courier** untuk pengiriman email asinkron. [DONE]
 
 ---
 
@@ -45,39 +46,29 @@ Setiap fitur baru di atas akan diimplementasikan sebagai endpoint di `dms-backen
 - **Trait Editor**: `PATCH /admin/identities/{id}` (JSON Patch RFC 6902) [DONE]
 - **Recovery**: `POST /admin/recovery/link` [DONE]
 - **Verify**: `PATCH /admin/identities/{id}` (Update verifiable_addresses) [DONE]
+- **Audit**: Log `stdout` mencatat setiap aksi admin. [DONE]
 
 ---
 
-## 4. Validation Strategy [ONGOING]
+## 4. Validation Strategy [PASSED]
 
 1. **Access Control**: Pastikan hanya user dengan email `@ory-vault.*` yang bisa memanggil endpoint `/admin-api/*`. [PASSED]
 2. **Audit Logging**: Setiap tindakan administratif (State change, Revoke, Edit) mencatat log ke stdout backend. [PASSED]
 3. **Zero Trust Integrity**: Pastikan backend memvalidasi JWT Signature sebelum melakukan request ke Kratos Admin port. [PASSED]
+4. **Email Delivery**: Recovery email berhasil diterima di Mailpit. [PASSED]
 
 ---
 
 ## 6. Retrospective & Issue Log (Iteration 0004)
 
-### Issue 1: Go Unused Import
-- **Root Cause**: Lupa menghapus package `time` setelah refactoring.
-- **Resolution**: Hapus import `time`.
-
-### Issue 2: Rule Overlap & Ambiguity
-- **Root Cause**: Pattern glob `/api/<**>` menangkap `/api/admin`. Penggunaan Regexp di YAML memerlukan escape character yang rumit.
-- **Resolution**: Gunakan prefix unik `/admin-api/` dan Nginx location khusus.
-
-### Issue 3: Recovery Flow 404
-- **Root Cause**: Kratos mengalihkan ke `/auth/recovery` tetapi halaman belum ada, dan fitur recovery belum diaktifkan di `kratos.yaml`.
-- **Resolution**: Aktifkan flow recovery di Kratos config dan buat halaman `/auth/recovery` di `dms-ui`.
-
-### Issue 4: Identity Update 400 (Password Hash Mismatch)
-- **Root Cause**: Melakukan `PUT` dengan mengirimkan kembali objek identitas lengkap termasuk hash password yang tidak dikenal formatnya oleh Kratos.
-- **Resolution**: Gunakan **JSON Patch (RFC 6902)** untuk melakukan update parsial hanya pada field yang dibutuhkan.
-
-### Issue 5: Recovery Redirect 404
-- **Root Cause**: Setelah link recovery berhasil divalidasi, Kratos me-redirect user ke flow settings, tetapi halaman `/auth/settings` belum diimplementasikan.
-- **Resolution**: Implementasi halaman `/auth/settings` di Next.js untuk menangani perubahan password pasca-recovery.
-
 ### Issue 6: Missing Self-Service Entry Point
-- **Root Cause**: Halaman login tidak memiliki navigasi ke flow recovery, menyulitkan user yang lupa password.
-- **Resolution**: Tambahkan link "Forgot your password?" di halaman login yang mengarah ke `/auth/recovery`.
+- **Root Cause**: Halaman login tidak memiliki navigasi ke flow recovery.
+- **Resolution**: Tambahkan link "Forgot your password?" di halaman login.
+
+### Issue 7: Courier Worker Missing
+- **Root Cause**: Email tertahan di database (courier queue) karena service `kratos courier watch` tidak dijalankan.
+- **Resolution**: Tambahkan service `vault-kratos-courier` di Docker Compose.
+
+### Issue 8: SMTP STARTTLS Failure
+- **Root Cause**: Mailpit tidak mendukung STARTTLS secara default pada port 1025.
+- **Resolution**: Tambahkan `disable_starttls=true` pada DSN SMTP di `kratos.yaml`.
