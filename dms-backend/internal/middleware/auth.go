@@ -8,8 +8,8 @@ import (
 
 	"github.com/MicahParks/keyfunc/v3"
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/nugra/ory-vault/dms-backend/internal/kratos"
 	"github.com/nugra/ory-vault/dms-backend/internal/store"
+	"github.com/nugra/ory-vault/dms-backend/internal/kratos"
 )
 
 type UserContextKey string
@@ -31,7 +31,12 @@ func AuthMiddleware(kf keyfunc.Keyfunc) func(http.Handler) http.Handler {
 				return
 			}
 
-			claims, _ := token.Claims.(jwt.MapClaims)
+			claims, ok := token.Claims.(jwt.MapClaims)
+			if !ok {
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+
 			sub, _ := claims.GetSubject()
 			ctx := context.WithValue(r.Context(), UserIDKey, sub)
 			next.ServeHTTP(w, r.WithContext(ctx))
@@ -42,17 +47,21 @@ func AuthMiddleware(kf keyfunc.Keyfunc) func(http.Handler) http.Handler {
 func AdminOnly(s *store.Store, k *kratos.Client) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			userID := r.Context().Value(UserIDKey).(string)
+			userID, ok := r.Context().Value(UserIDKey).(string)
+			if !ok {
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
 
-			// 1. Check persistent RBAC
-			isAdmin, err := s.HasRole(userID, "admin")
+			// 1. Check persistent RBAC with context
+			isAdmin, err := s.HasRole(r.Context(), userID, "admin")
 			if err == nil && isAdmin {
 				next.ServeHTTP(w, r)
 				return
 			}
 
-			// 2. Fallback: Check email suffix from Kratos (Legacy support for transition)
-			identity, err := k.GetIdentity(userID)
+			// 2. Fallback: Check email suffix from Kratos with context
+			identity, err := k.GetIdentity(r.Context(), userID)
 			if err == nil {
 				traits, ok := identity.Traits.(map[string]interface{})
 				if ok {
@@ -64,6 +73,7 @@ func AdminOnly(s *store.Store, k *kratos.Client) func(http.Handler) http.Handler
 				}
 			}
 
+			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusForbidden)
 			json.NewEncoder(w).Encode(map[string]string{"error": "insufficient permissions"})
 		})

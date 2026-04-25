@@ -1,9 +1,9 @@
 package store
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
-	"log"
 
 	_ "github.com/lib/pq"
 )
@@ -25,33 +25,23 @@ type AuditLog struct {
 
 func NewPostgresStore(dsn string) (*Store, error) {
 	db, err := sql.Open("postgres", dsn)
-	if err != nil {
-		return nil, err
-	}
-	if err := db.Ping(); err != nil {
-		return nil, err
-	}
-	log.Println("Connected to Enterprise SQL Store")
+	if err != nil { return nil, err }
+	if err := db.Ping(); err != nil { return nil, err }
 	return &Store{db: db}, nil
 }
 
-func (s *Store) SaveAuditLog(adminID, action, targetID string, details interface{}, ip, ua string) error {
+func (s *Store) SaveAuditLog(ctx context.Context, adminID, action, targetID string, details interface{}, ip, ua string) error {
 	detailsJSON, _ := json.Marshal(details)
 	query := `INSERT INTO enterprise.audit_logs (admin_id, action, target_id, details, ip_address, user_agent) VALUES ($1, $2, $3, $4, $5, $6)`
-	_, err := s.db.Exec(query, adminID, action, targetID, detailsJSON, ip, ua)
-	if err != nil {
-		log.Printf("SQL_ERROR: SaveAudit failed: %v", err)
-	}
+	_, err := s.db.ExecContext(ctx, query, adminID, action, targetID, detailsJSON, ip, ua)
 	return err
 }
 
-func (s *Store) GetAuditLogs(limit, offset int) ([]AuditLog, error) {
+func (s *Store) GetAuditLogs(ctx context.Context, limit, offset int) ([]AuditLog, error) {
 	query := `SELECT id, timestamp, admin_id, action, COALESCE(target_id::text, ''), details, COALESCE(ip_address, ''), COALESCE(user_agent, '') 
 	          FROM enterprise.audit_logs ORDER BY timestamp DESC LIMIT $1 OFFSET $2`
-	rows, err := s.db.Query(query, limit, offset)
-	if err != nil {
-		return nil, err
-	}
+	rows, err := s.db.QueryContext(ctx, query, limit, offset)
+	if err != nil { return nil, err }
 	defer rows.Close()
 
 	var logs []AuditLog
@@ -65,10 +55,10 @@ func (s *Store) GetAuditLogs(limit, offset int) ([]AuditLog, error) {
 	return logs, nil
 }
 
-func (s *Store) HasRole(userID, roleID string) (bool, error) {
+func (s *Store) HasRole(ctx context.Context, userID, roleID string) (bool, error) {
 	var exists bool
 	query := `SELECT EXISTS(SELECT 1 FROM enterprise.user_roles WHERE user_id = $1 AND role_id = $2)`
-	err := s.db.QueryRow(query, userID, roleID).Scan(&exists)
+	err := s.db.QueryRowContext(ctx, query, userID, roleID).Scan(&exists)
 	return exists, err
 }
 
