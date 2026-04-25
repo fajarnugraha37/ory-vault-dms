@@ -45,7 +45,7 @@ reg-client:
 	docker exec -it vault-backend go run /app/tools/register-client.go
 
 logs:
-	docker compose logs -f $(service) | Tee-Object -FilePath "$(service)"
+	docker compose logs -f $(service) | Tee-Object -FilePath "$(service).log"
 
 logs-all:
 	docker compose logs -f | Tee-Object -FilePath "auth-lab.log"
