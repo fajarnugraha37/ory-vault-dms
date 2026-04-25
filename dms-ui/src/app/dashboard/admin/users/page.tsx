@@ -36,12 +36,14 @@ import {
   History, 
   CheckCircle2, 
   XCircle, 
-  RefreshCcw, 
   Trash2, 
   LogOut,
   ChevronRight,
   Database,
-  AlertTriangle
+  AlertTriangle,
+  Key,
+  ShieldCheck,
+  Plus
 } from "lucide-react";
 
 const fetcher = (url: string) => axios.get(url, { withCredentials: true }).then(res => res.data);
@@ -63,7 +65,11 @@ interface AuditLog {
   action: string;
   target: string;
   details: string;
-  ip_address: string;
+}
+
+interface Role {
+  id: string;
+  description: string;
 }
 
 interface Identity {
@@ -76,8 +82,8 @@ interface Identity {
   };
   state: 'active' | 'inactive';
   verifiable_addresses?: Array<{
-    status: string
-    verified: boolean
+    status: string;
+    verified: boolean;
   }>;
   credentials?: Record<string, any>;
   metadata_public?: any;
@@ -89,15 +95,24 @@ interface Identity {
 export default function AdminUsersPage() {
   const { data: identities, mutate } = useSWR<Identity[]>('/admin-api/identities', fetcher);
   const { data: audits } = useSWR<AuditLog[]>('/admin-api/audit', fetcher, { refreshInterval: 5000 });
+  const { data: globalRoles, mutate: mutateRoles } = useSWR<Role[]>('/admin-api/roles', fetcher);
   
   const [selectedUser, setSelectedUser] = useState<Identity | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [editTraits, setEditTraits] = useState<any>({});
   const [loading, setLoading] = useState<string | null>(null);
   const [recoveryLink, setRecoveryLink] = useState<string | null>(null);
+  
+  // New Role Form State
+  const [newRole, setNewRole] = useState({ id: '', description: '' });
 
   const { data: sessions, mutate: mutateSessions } = useSWR<Session[]>(
     selectedUser ? `/admin-api/identities/${selectedUser.id}/sessions` : null,
+    fetcher
+  );
+
+  const { data: userRoles, mutate: mutateUserRoles } = useSWR<string[]>(
+    selectedUser ? `/admin-api/identities/${selectedUser.id}/roles` : null,
     fetcher
   );
 
@@ -146,11 +161,7 @@ export default function AdminUsersPage() {
       const res = await axios.post(`/admin-api/identities/${selectedUser!.id}/recovery`, {}, { withCredentials: true });
       setRecoveryLink(res.data.recovery_link);
       toast.success("Recovery link generated");
-    } catch (err) {
-      toast.error("Failed to generate link");
-    } finally {
-      setLoading(null);
-    }
+    } catch (err) { toast.error("Failed to generate link"); } finally { setLoading(null); }
   };
 
   const saveTraits = () => 
@@ -158,6 +169,42 @@ export default function AdminUsersPage() {
 
   const handleDeleteUser = () =>
     handleAction('Delete Identity', () => axios.delete(`/admin-api/identities/${selectedUser!.id}`, { withCredentials: true }).then(() => setSelectedUser(null)));
+
+  // RBAC Handlers
+  const createGlobalRole = async () => {
+    if (!newRole.id) return;
+    try {
+        await axios.post('/admin-api/roles', newRole, { withCredentials: true });
+        toast.success("Role created");
+        mutateRoles();
+        setNewRole({ id: '', description: '' });
+    } catch (err) { toast.error("Failed to create role"); }
+  };
+
+  const deleteGlobalRole = async (id: string) => {
+    if (!confirm(`Delete role ${id}?`)) return;
+    try {
+        await axios.delete(`/admin-api/roles/${id}`, { withCredentials: true });
+        toast.success("Role deleted");
+        mutateRoles();
+    } catch (err) { toast.error("Failed to delete role"); }
+  };
+
+  const assignUserRole = async (roleId: string) => {
+    try {
+        await axios.post(`/admin-api/identities/${selectedUser!.id}/roles`, { role_id: roleId }, { withCredentials: true });
+        toast.success("Role assigned");
+        mutateUserRoles();
+    } catch (err) { toast.error("Failed to assign role"); }
+  };
+
+  const removeUserRole = async (roleId: string) => {
+    try {
+        await axios.delete(`/admin-api/identities/${selectedUser!.id}/roles/${roleId}`, { withCredentials: true });
+        toast.success("Role removed");
+        mutateUserRoles();
+    } catch (err) { toast.error("Failed to remove role"); }
+  };
 
   if (!identities) return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-white">
@@ -171,235 +218,285 @@ export default function AdminUsersPage() {
 
   return (
     <div className="bg-slate-50 min-h-screen pb-20">
-      <nav className="bg-white border-b border-slate-200 px-8 py-4 flex justify-between items-center sticky top-0 z-50">
+      <nav className="bg-white border-b-4 border-slate-900 px-8 py-4 flex justify-between items-center sticky top-0 z-50 shadow-md">
         <div className="flex items-center gap-3">
           <div className="bg-slate-900 text-white p-2 rounded-lg"><Shield size={20} /></div>
-          <span className="font-bold text-xl tracking-tight uppercase italic">Vault_Ops <span className="text-slate-400 font-normal">v0.4.1</span></span>
+          <span className="font-black text-2xl tracking-tighter uppercase italic">Vault_Ops <span className="text-blue-600">Pro</span></span>
         </div>
-        <Button variant="outline" size="sm" asChild>
+        <Button variant="outline" size="sm" asChild className="border-2 font-black text-xs rounded-xl">
           <a href="/">Dashboard Hub</a>
         </Button>
       </nav>
 
-      <main className="p-8 max-w-[1600px] mx-auto grid grid-cols-1 lg:grid-cols-12 gap-8">
-        {/* User List */}
-        <div className="lg:col-span-8 space-y-8">
-          <Card className="border-slate-200 shadow-sm overflow-hidden rounded-3xl">
-            <CardHeader className="bg-white border-b border-slate-100">
-              <CardTitle className="text-lg flex items-center gap-2"><Database size={18} className="text-slate-400" /> Identity Directory</CardTitle>
-            </CardHeader>
-            <CardContent className="p-0">
-              <Table>
-                <TableHeader><TableRow className="bg-slate-50/50"><TableHead className="pl-8">Subject</TableHead><TableHead>Status</TableHead><TableHead className="text-right pr-8">Action</TableHead></TableRow></TableHeader>
-                <TableBody>
-                  {identities.map((user) => (
-                    <TableRow key={user.id} className={`cursor-pointer hover:bg-slate-50/80 transition-all ${selectedUser?.id === user.id ? 'bg-blue-50/50' : ''}`} onClick={() => setSelectedUser(user)}>
-                      <TableCell className="pl-8 py-6">
-                        <div className="font-bold text-slate-900 text-base">{user.traits.email}</div>
-                        <div className="text-[10px] font-mono text-slate-400 uppercase">{user.id}</div>
-                      </TableCell>
-                      <TableCell><Badge variant={user.state === 'active' ? 'default' : 'destructive'} className="font-black text-[9px]">{user.state.toUpperCase()}</Badge></TableCell>
-                      <TableCell className="text-right pr-8"><ChevronRight size={16} className={`ml-auto transition-transform ${selectedUser?.id === user.id ? 'translate-x-1 text-blue-600' : 'text-slate-300'}`} /></TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
+      <main className="p-8 max-w-[1700px] mx-auto grid grid-cols-1 lg:grid-cols-12 gap-10">
+        
+        {/* Directory Column */}
+        <div className="lg:col-span-8 space-y-10">
+          
+          <Tabs defaultValue="users" className="w-full">
+            <TabsList className="bg-slate-200/50 p-1 rounded-2xl mb-6">
+                <TabsTrigger value="users" className="rounded-xl px-8 font-black text-xs">IDENTITIES</TabsTrigger>
+                <TabsTrigger value="roles" className="rounded-xl px-8 font-black text-xs">GLOBAL_ROLES</TabsTrigger>
+                <TabsTrigger value="audit" className="rounded-xl px-8 font-black text-xs">AUDIT_LOGS</TabsTrigger>
+            </TabsList>
 
-          {/* Audit Logs */}
-          <Card className="border-slate-200 shadow-sm rounded-3xl">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0">
-                <CardTitle className="text-lg flex items-center gap-2"><History size={18} className="text-red-500" /> Audit Timeline</CardTitle>
-                <Badge variant="outline" className="font-mono text-[9px] text-slate-400">LIVE_SIGNALS</Badge>
-            </CardHeader>
-            <CardContent>
-              <ScrollArea className="h-[300px] p-4 bg-slate-50/50 border rounded-2xl">
-                <div className="space-y-4">
-                   {audits?.map((log, i) => (
-                     <div key={i} className="text-[10px] font-mono border-b border-slate-100 pb-3 flex flex-col gap-1">
-                        <div className="flex justify-between">
-                            <span className="text-blue-600 font-bold">ADMIN:{log.admin_id.substring(0,8)}</span>
-                            <span className="text-slate-400">[{new Date(log.timestamp).toLocaleString()}]</span>
+            <TabsContent value="users">
+                <Card className="border-4 border-slate-900 rounded-[2.5rem] shadow-[16px_16px_0px_0px_rgba(0,0,0,1)] overflow-hidden bg-white">
+                    <Table>
+                        <TableHeader><TableRow className="bg-slate-900 hover:bg-slate-900"><TableHead className="pl-8 text-white font-black uppercase text-[10px] tracking-widest py-6">Subject Identity</TableHead><TableHead className="text-white font-black uppercase text-[10px] tracking-widest text-center">Status</TableHead><TableHead className="text-white font-black uppercase text-[10px] tracking-widest text-right pr-8">Registry</TableHead></TableRow></TableHeader>
+                        <TableBody>
+                        {identities.map((user) => (
+                            <TableRow key={user.id} className={`cursor-pointer border-b-2 border-slate-50 transition-all ${selectedUser?.id === user.id ? 'bg-blue-50/50' : 'hover:bg-slate-50'}`} onClick={() => setSelectedUser(user)}>
+                            <TableCell className="pl-8 py-6">
+                                <div className="font-black text-slate-900 text-lg tracking-tight">{user.traits.email}</div>
+                                <div className="text-[10px] font-mono text-slate-400 mt-1">{user.id}</div>
+                            </TableCell>
+                            <TableCell className="text-center"><Badge variant={user.state === 'active' ? 'default' : 'destructive'} className="font-black text-[9px] px-3">{user.state.toUpperCase()}</Badge></TableCell>
+                            <TableCell className="text-right pr-8 font-mono text-[10px] text-slate-300 font-black tracking-widest">INTERNAL_DB</TableCell>
+                            </TableRow>
+                        ))}
+                        </TableBody>
+                    </Table>
+                </Card>
+            </TabsContent>
+
+            <TabsContent value="roles">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    <Card className="border-4 border-slate-900 rounded-[2rem] shadow-[12px_12px_0px_0px_rgba(59,130,246,1)] p-8">
+                        <CardHeader className="px-0 pt-0">
+                            <CardTitle className="font-black uppercase italic tracking-widest text-xl">Create_Role</CardTitle>
+                            <CardDescription className="text-[10px] font-bold">Define system permission groups</CardDescription>
+                        </CardHeader>
+                        <div className="space-y-4">
+                            <div className="space-y-2">
+                                <Label className="text-[10px] font-black ml-1">ROLE_ID</Label>
+                                <Input placeholder="e.g. documentation_editor" value={newRole.id} onChange={e => setNewRole({...newRole, id: e.target.value.toLowerCase()})} className="rounded-xl border-2 font-bold" />
+                            </div>
+                            <div className="space-y-2">
+                                <Label className="text-[10px] font-black ml-1">DESCRIPTION</Label>
+                                <Input placeholder="Can edit and delete documents" value={newRole.description} onChange={e => setNewRole({...newRole, description: e.target.value})} className="rounded-xl border-2 font-bold" />
+                            </div>
+                            <Button onClick={createGlobalRole} className="w-full font-black py-6 rounded-2xl mt-2"><Plus size={16} className="mr-2"/> REGISTER_ROLE</Button>
                         </div>
-                        <div>
-                            <span className="font-black text-slate-900 uppercase bg-white border px-1.5 py-0.5 rounded mr-2">{log.action}</span>
-                            <span className="text-slate-500">{log.details}</span>
-                        </div>
-                     </div>
-                   ))}
+                    </Card>
+
+                    <div className="space-y-4">
+                        {globalRoles?.map(role => (
+                            <Card key={role.id} className="border-2 border-slate-200 rounded-2xl p-6 hover:border-slate-900 transition-all flex justify-between items-center group shadow-sm bg-white">
+                                <div>
+                                    <div className="font-black text-slate-900 uppercase tracking-tighter flex items-center gap-2">
+                                        <ShieldCheck size={14} className="text-blue-600" />
+                                        {role.id}
+                                    </div>
+                                    <div className="text-xs text-slate-400 mt-1 font-medium italic">{role.description}</div>
+                                </div>
+                                <Button variant="ghost" size="icon" onClick={() => deleteGlobalRole(role.id)} className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all"><Trash2 size={16}/></Button>
+                            </Card>
+                        ))}
+                    </div>
                 </div>
-              </ScrollArea>
-            </CardContent>
-          </Card>
+            </TabsContent>
+
+            <TabsContent value="audit">
+                 <Card className="border-4 border-slate-900 rounded-[2.5rem] shadow-[12px_12px_0px_0px_rgba(239,68,68,1)] overflow-hidden bg-white">
+                    <CardHeader className="bg-red-50/50 border-b-2 border-slate-900">
+                        <CardTitle className="font-black uppercase text-sm tracking-[0.3em] flex items-center gap-3">
+                            <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
+                            Immutable Audit Stream
+                        </CardTitle>
+                    </CardHeader>
+                    <ScrollArea className="h-[500px]">
+                        <div className="p-8 space-y-6 font-mono">
+                            {audits?.map((log, i) => (
+                                <div key={i} className="text-[10px] border-l-4 border-slate-200 pl-6 py-2 relative">
+                                    <div className="absolute -left-[7px] top-4 w-3 h-3 bg-white border-2 border-slate-400 rounded-full"></div>
+                                    <div className="flex justify-between items-start mb-1">
+                                        <span className="bg-slate-900 text-white px-2 py-0.5 rounded font-black tracking-widest">{log.action}</span>
+                                        <span className="text-slate-400 font-bold">{new Date(log.timestamp).toLocaleString()}</span>
+                                    </div>
+                                    <div className="text-slate-600 mt-2">
+                                        <span className="text-blue-600 font-bold underline">ADMIN:{log.admin_id.substring(0,8)}</span> 
+                                        <span className="mx-2 text-slate-300">|</span> 
+                                        {log.details}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </ScrollArea>
+                 </Card>
+            </TabsContent>
+          </Tabs>
+
         </div>
 
-        {/* Detail Sidebar */}
+        {/* Sidebar Column */}
         <div className="lg:col-span-4">
           {selectedUser ? (
-            <div className="space-y-6 sticky top-[88px]">
-              <Card className="border-slate-900 border-2 shadow-2xl rounded-[2rem] overflow-hidden">
-                <CardHeader className="bg-slate-900 text-white">
-                   <div className="flex justify-between items-center">
-                    <CardTitle className="font-black uppercase italic tracking-tighter text-xl">Subject_Posture</CardTitle>
-                    <Button variant="ghost" size="sm" className="text-[10px] font-black hover:bg-slate-800 text-blue-400" onClick={() => setIsEditing(!isEditing)}>
-                        {isEditing ? "DISCARD" : "EDIT_PROFILE"}
+            <div className="space-y-8 sticky top-[108px]">
+              
+              <Card className="border-4 border-slate-900 rounded-[2.5rem] shadow-2xl p-8 space-y-10 bg-white">
+                <header className="flex justify-between items-start border-b-2 border-slate-100 pb-6">
+                    <div>
+                        <h2 className="text-3xl font-black text-slate-900 tracking-tighter uppercase italic">Subject_Ops</h2>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Deep Identity Control</p>
+                    </div>
+                    <Button variant={isEditing ? "ghost" : "outline"} size="sm" className="font-black text-[10px] border-2 rounded-xl" onClick={() => setIsEditing(!isEditing)}>
+                        {isEditing ? "CANCEL" : "EDIT_TRAITS"}
                     </Button>
+                </header>
+
+                {isEditing ? (
+                  <div className="space-y-6">
+                    <div className="space-y-2"><Label className="text-[10px] font-black text-slate-400 uppercase ml-2">FIRST_NAME</Label><Input value={editTraits.first_name || ''} onChange={e => setEditTraits({...editTraits, first_name: e.target.value})} className="rounded-xl border-2 py-6 font-bold" /></div>
+                    <div className="space-y-2"><Label className="text-[10px] font-black text-slate-400 uppercase ml-2">LAST_NAME</Label><Input value={editTraits.last_name || ''} onChange={e => setEditTraits({...editTraits, last_name: e.target.value})} className="rounded-xl border-2 py-6 font-bold" /></div>
+                    <div className="space-y-2"><Label className="text-[10px] font-black text-slate-400 uppercase ml-2">DIVISION</Label><Input value={editTraits.division || ''} onChange={e => setEditTraits({...editTraits, division: e.target.value})} className="rounded-xl border-2 py-6 font-bold" /></div>
+                    
+                    <Dialog>
+                        <DialogTrigger asChild><Button className="w-full font-black py-7 rounded-2xl shadow-xl tracking-[0.2em] active:translate-y-1">COMMIT_UPDATE</Button></DialogTrigger>
+                        <DialogContent className="rounded-[2rem] border-4 border-slate-900">
+                            <DialogHeader><DialogTitle className="font-black text-2xl italic tracking-tighter uppercase">Confirm Modification?</DialogTitle><DialogDescription className="font-bold py-4">Applying these changes will rewrite the primary subject traits in the distributed registry.</DialogDescription></DialogHeader>
+                            <DialogFooter><DialogClose asChild><Button variant="outline" className="rounded-xl font-black uppercase text-xs">Abort</Button></DialogClose><Button onClick={saveTraits} className="rounded-xl font-black uppercase text-xs">Execute Update</Button></DialogFooter>
+                        </DialogContent>
+                    </Dialog>
+                  </div>
+                ) : (
+                  <div className="space-y-8">
+                    <div className="bg-slate-900 rounded-[1.5rem] p-8 space-y-4 font-mono text-xs border-4 border-slate-800 shadow-inner text-white">
+                        <div className="flex justify-between border-b border-slate-800 pb-2"><span className="text-slate-500">SUBJECT:</span> <span className="font-black text-blue-400 uppercase">{selectedUser.traits.first_name} {selectedUser.traits.last_name}</span></div>
+                        <div className="flex justify-between border-b border-slate-800 pb-2"><span className="text-slate-500">DEPT:</span> <span className="font-black">{selectedUser.traits.division || 'N/A'}</span></div>
+                        <div className="flex justify-between"><span className="text-slate-500">EMAIL:</span> <span className="font-black text-blue-400 lowercase italic">{selectedUser.traits.email}</span></div>
+                    </div>
+
+                    {/* RBAC Assignment Section */}
+                    <div className="space-y-4">
+                        <Label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Assigned_Roles</Label>
+                        <div className="flex flex-wrap gap-2 p-4 bg-slate-50 rounded-2xl border-2 border-slate-100 min-h-[60px]">
+                            {userRoles?.map(roleId => (
+                                <Badge key={roleId} className="bg-blue-600 hover:bg-red-600 transition-colors cursor-pointer font-black text-[9px] gap-2 py-1" onClick={() => removeUserRole(roleId)}>
+                                    {roleId.toUpperCase()} <LogOut size={10} />
+                                </Badge>
+                            ))}
+                            {!userRoles?.length && <span className="text-[10px] text-slate-300 font-bold italic py-1">NO_ROLES_ASSIGNED</span>}
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                           <Dialog>
+                                <DialogTrigger asChild><Button variant="outline" size="sm" className="w-full text-[9px] font-black rounded-lg h-8 uppercase"><Plus size={12} className="mr-1" /> Add Role</Button></DialogTrigger>
+                                <DialogContent className="rounded-3xl border-4 border-slate-900">
+                                    <DialogHeader><DialogTitle className="font-black uppercase italic">Assign_System_Role</DialogTitle></DialogHeader>
+                                    <div className="space-y-2 py-4">
+                                        {globalRoles?.filter(gr => !userRoles?.includes(gr.id)).map(gr => (
+                                            <Button key={gr.id} variant="secondary" className="w-full justify-start font-black text-xs h-12" onClick={() => assignUserRole(gr.id)}>{gr.id.toUpperCase()}</Button>
+                                        ))}
+                                    </div>
+                                </DialogContent>
+                           </Dialog>
+                        </div>
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-4">
+                       <div className="p-4 bg-slate-50 rounded-2xl border-2 border-slate-100 flex flex-col items-center">
+                          <Label className="text-[8px] font-black text-slate-400 uppercase mb-2">2FA_ENFORCEMENT</Label>
+                          <div className={`text-[10px] font-black ${is2FA ? 'text-green-600' : 'text-amber-600'}`}>{is2FA ? 'ACTIVE' : 'NONE'}</div>
+                       </div>
+                       <div className="p-4 bg-slate-50 rounded-2xl border-2 border-slate-100 flex flex-col items-center">
+                          <Label className="text-[8px] font-black text-slate-400 uppercase mb-2">AUTH_STATUS</Label>
+                          <div className={`text-[10px] font-black ${isVerified ? 'text-green-600' : 'text-red-500'}`}>{isVerified ? 'TRUSTED' : 'PENDING'}</div>
+                       </div>
+                    </div>
+                  </div>
+                )}
+
+                <div className="space-y-4 pt-6 border-t-2 border-slate-100">
+                   <div className="grid grid-cols-2 gap-4">
+                      <Dialog>
+                        <DialogTrigger asChild><Button variant="outline" className="h-12 rounded-xl font-black text-[10px] uppercase tracking-widest border-slate-900 border-2 shadow-sm">Toggle State</Button></DialogTrigger>
+                        <DialogContent className="border-4 border-slate-900 rounded-[2rem]">
+                            <DialogHeader><DialogTitle className="font-black uppercase italic text-2xl">Access_Inversion?</DialogTitle><DialogDescription className="font-bold py-4">The identity will be set to {selectedUser.state === 'active' ? 'INACTIVE (LOCKED)' : 'ACTIVE'}.</DialogDescription></DialogHeader>
+                            <DialogFooter><Button onClick={toggleState} className="w-full font-black py-6">CONFIRM_INVERSION</Button></DialogFooter>
+                        </DialogContent>
+                      </Dialog>
+                      <Button variant="secondary" className="h-12 rounded-xl font-black text-[10px] uppercase tracking-widest bg-blue-50 text-blue-600" onClick={generateRecovery}>Recovery Link</Button>
                    </div>
-                </CardHeader>
-                <CardContent className="space-y-8 p-8">
-                  {isEditing ? (
-                    <div className="space-y-5">
-                        <div className="space-y-1.5"><Label className="text-[10px] font-black text-slate-400 ml-1">FIRST_NAME</Label><Input value={editTraits.first_name || ''} onChange={e => setEditTraits({...editTraits, first_name: e.target.value})} className="rounded-xl border-2" /></div>
-                        <div className="space-y-1.5"><Label className="text-[10px] font-black text-slate-400 ml-1">LAST_NAME</Label><Input value={editTraits.last_name || ''} onChange={e => setEditTraits({...editTraits, last_name: e.target.value})} className="rounded-xl border-2" /></div>
-                        <div className="space-y-1.5"><Label className="text-[10px] font-black text-slate-400 ml-1">DIVISION</Label><Input value={editTraits.division || ''} onChange={e => setEditTraits({...editTraits, division: e.target.value})} className="rounded-xl border-2" /></div>
-                        
+
+                   {!isVerified && (
+                      <Dialog>
+                        <DialogTrigger asChild><Button className="w-full h-12 bg-blue-600 hover:bg-blue-700 text-white font-black text-[10px] rounded-xl uppercase tracking-widest">Manual Verification</Button></DialogTrigger>
+                        <DialogContent className="border-4 border-slate-900 rounded-[2rem]">
+                            <DialogHeader><DialogTitle className="font-black italic uppercase">Bypass Verification?</DialogTitle><DialogDescription className="py-4 font-bold text-slate-500">Force the status to COMPLETED and mark the verifiable address as TRUSTED.</DialogDescription></DialogHeader>
+                            <DialogFooter><Button onClick={manualVerify} className="w-full font-black py-6 bg-blue-600">FORCE_TRUST</Button></DialogFooter>
+                        </DialogContent>
+                      </Dialog>
+                   )}
+
+                   {recoveryLink && (
+                      <div className="p-5 bg-slate-900 text-green-400 rounded-3xl text-xs break-all font-mono border-4 border-blue-900 shadow-inner">
+                        <div className="flex items-center gap-2 mb-3 text-white font-black"><AlertTriangle size={14} className="text-amber-400"/> SECRET_TOKEN_DETECTED</div>
+                        {recoveryLink}
+                      </div>
+                   )}
+
+                   {/* Individual Sessions */}
+                   <div className="mt-8 space-y-4">
+                      <div className="flex justify-between items-center px-1">
+                        <Label className="text-[10px] font-black uppercase tracking-widest italic text-slate-400">Device_Sessions</Label>
                         <Dialog>
-                            <DialogTrigger asChild>
-                                <Button className="w-full font-black text-xs py-6 rounded-2xl shadow-lg active:translate-y-1 transition-all">APPLY_CHANGES</Button>
-                            </DialogTrigger>
-                            <DialogContent>
-                                <DialogHeader>
-                                    <DialogTitle>Confirm Profile Update?</DialogTitle>
-                                    <DialogDescription>This will modify the user's primary identity traits in Ory Kratos.</DialogDescription>
-                                </DialogHeader>
-                                <DialogFooter>
-                                    <DialogClose asChild><Button variant="outline">Cancel</Button></DialogClose>
-                                    <Button onClick={saveTraits}>Confirm Update</Button>
-                                </DialogFooter>
+                            <DialogTrigger asChild><Button variant="link" className="h-auto p-0 text-[10px] font-black text-red-500">TERMINATE_ALL</Button></DialogTrigger>
+                            <DialogContent className="border-4 border-red-600 rounded-[2rem]">
+                                <DialogHeader><DialogTitle className="font-black text-red-600 uppercase text-2xl">Total Session Wipe?</DialogTitle><DialogDescription className="font-bold py-4">Every authenticated signal for this identity will be invalidated across all nodes.</DialogDescription></DialogHeader>
+                                <DialogFooter><Button variant="destructive" onClick={revokeAllSessions} className="w-full font-black py-6">CONFIRM_WIPE</Button></DialogFooter>
                             </DialogContent>
                         </Dialog>
-                    </div>
-                  ) : (
-                    <div className="space-y-8">
-                        <div className="grid grid-cols-2 gap-4">
-                           <div className="p-4 bg-slate-50 rounded-2xl border-2 border-slate-100 flex flex-col items-center justify-center text-center">
-                              <Label className="text-[8px] font-black text-slate-400 uppercase mb-2">Verification</Label>
-                              <div className={`text-[10px] font-black ${isVerified ? 'text-green-600' : 'text-red-500'}`}>{isVerified ? 'VERIFIED' : 'PENDING'}</div>
-                           </div>
-                           <div className="p-4 bg-slate-50 rounded-2xl border-2 border-slate-100 flex flex-col items-center justify-center text-center">
-                              <Label className="text-[8px] font-black text-slate-400 uppercase mb-2">2FA Status</Label>
-                              <div className={`text-[10px] font-black ${is2FA ? 'text-green-600' : 'text-amber-600'}`}>{is2FA ? 'ENFORCED' : 'DISABLED'}</div>
-                           </div>
-                        </div>
-                        
-                        <div className="bg-slate-50 rounded-[1.5rem] p-6 space-y-4 font-mono text-xs border-2 border-slate-100">
-                            <div className="flex justify-between border-b pb-2 text-slate-500"><span>SUBJECT:</span> <span className="font-bold text-slate-900">{selectedUser.traits.first_name} {selectedUser.traits.last_name}</span></div>
-                            <div className="flex justify-between border-b pb-2 text-slate-500"><span>DEPT:</span> <span className="font-bold text-slate-900">{selectedUser.traits.division || 'NOT_SET'}</span></div>
-                            <div className="flex justify-between text-slate-500"><span>EMAIL:</span> <span className="font-bold text-blue-600 underline">{selectedUser.traits.email}</span></div>
-                        </div>
-                    </div>
-                  )}
-
-                  <Tabs defaultValue="actions">
-                    <TabsList className="grid w-full grid-cols-2 p-1 bg-slate-100 rounded-xl h-10">
-                      <TabsTrigger value="actions" className="font-black text-[10px] rounded-lg">OPERATIONS</TabsTrigger>
-                      <TabsTrigger value="metadata" className="font-black text-[10px] rounded-lg">METADATA</TabsTrigger>
-                    </TabsList>
-                    <TabsContent value="actions" className="space-y-6 pt-6">
-                       <div className="grid grid-cols-2 gap-3">
-                          <Dialog>
-                            <DialogTrigger asChild><Button variant="outline" className="text-[10px] font-black h-10 rounded-xl uppercase tracking-tighter">Toggle Access</Button></DialogTrigger>
-                            <DialogContent>
-                              <DialogHeader>
-                                <DialogTitle>Switch Identity State?</DialogTitle>
-                                <DialogDescription>User status will be set to {selectedUser.state === 'active' ? 'INACTIVE' : 'ACTIVE'}.</DialogDescription>
-                              </DialogHeader>
-                              <DialogFooter>
-                                <DialogClose asChild><Button variant="outline">Cancel</Button></DialogClose>
-                                <Button onClick={toggleState}>Proceed</Button>
-                              </DialogFooter>
-                            </DialogContent>
-                          </Dialog>
-                          <Button variant="secondary" className="text-[10px] font-black h-10 rounded-xl uppercase tracking-tighter" onClick={generateRecovery}>Recovery Link</Button>
-                       </div>
-                       
-                       {!isVerified && (
-                            <Dialog>
-                                <DialogTrigger asChild><Button variant="outline" className="w-full text-[10px] font-black h-10 rounded-xl border-blue-200 text-blue-700 bg-blue-50/50">VERIFY EMAIL MANUALLY</Button></DialogTrigger>
-                                <DialogContent>
-                                    <DialogHeader><DialogTitle>Mark as Verified?</DialogTitle><DialogDescription>This bypasses the standard email challenge flow.</DialogDescription></DialogHeader>
-                                    <DialogFooter><Button onClick={manualVerify}>Verify Now</Button></DialogFooter>
+                      </div>
+                      
+                      <div className="space-y-3 max-h-48 overflow-y-auto pr-2 custom-scrollbar">
+                        {sessions?.map(s => (
+                          <div key={s.id} className="p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl flex justify-between items-center group/sess hover:border-slate-900 transition-all">
+                             <div className="space-y-1">
+                                <div className="text-[10px] font-black text-slate-900 flex items-center gap-2">
+                                  <span className={`w-2 h-2 rounded-full ${s.active ? 'bg-green-500 animate-pulse' : 'bg-slate-300'}`}></span>
+                                  {s.devices[0]?.ip_address}
+                                </div>
+                                <div className="text-[8px] text-slate-400 font-mono truncate max-w-[150px]">{s.devices[0]?.user_agent}</div>
+                             </div>
+                             <Dialog>
+                                <DialogTrigger asChild><Button variant="ghost" size="icon" className="h-7 w-7 text-slate-300 hover:text-red-600 transition-colors"><LogOut size={14}/></Button></DialogTrigger>
+                                <DialogContent className="border-2 border-slate-900">
+                                    <DialogHeader><DialogTitle className="font-black uppercase">Terminate Session?</DialogTitle></DialogHeader>
+                                    <DialogFooter><Button variant="destructive" onClick={() => revokeSession(s.id)}>End Access</Button></DialogFooter>
                                 </DialogContent>
-                            </Dialog>
-                       )}
-                       
-                       {recoveryLink && (
-                          <div className="p-4 bg-slate-900 rounded-2xl text-[9px] font-mono text-green-400 break-all border-4 border-blue-900 shadow-inner">
-                            <div className="flex items-center gap-2 mb-2 text-white font-black"><AlertTriangle size={12} className="text-amber-400"/> CONFIDENTIAL_LINK</div>
-                            {recoveryLink}
+                             </Dialog>
                           </div>
-                       )}
+                        ))}
+                      </div>
+                   </div>
 
-                       <div className="space-y-4 pt-4 border-t border-slate-100">
-                          <div className="flex justify-between items-center px-1">
-                            <Label className="text-[10px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-2"><Smartphone size={12}/> Sessions</Label>
-                            
-                            <Dialog>
-                                <DialogTrigger asChild><Button variant="link" className="h-auto p-0 text-[10px] font-black text-red-500 underline underline-offset-4">REVOKE ALL</Button></DialogTrigger>
-                                <DialogContent>
-                                    <DialogHeader><DialogTitle>Revoke All Active Sessions?</DialogTitle><DialogDescription>The user will be logged out from all devices immediately.</DialogDescription></DialogHeader>
-                                    <DialogFooter><Button variant="destructive" onClick={revokeAllSessions}>Revoke All</Button></DialogFooter>
-                                </DialogContent>
-                            </Dialog>
-                          </div>
-                          
-                          <ScrollArea className="h-44 rounded-2xl border-2 border-slate-100 bg-slate-50/30 p-2">
-                             {sessions?.map(s => (
-                               <div key={s.id} className="p-4 bg-white border-2 border-slate-100 rounded-2xl mb-2 flex justify-between items-center shadow-sm hover:border-slate-400 transition-all">
-                                  <div className="space-y-1">
-                                    <div className="text-[11px] font-black text-slate-900">{s.devices[0]?.ip_address}</div>
-                                    <div className="text-[8px] text-slate-400 font-mono truncate max-w-[150px]">{s.devices[0]?.user_agent}</div>
-                                  </div>
-                                  <Dialog>
-                                    <DialogTrigger asChild>
-                                        <Button variant="ghost" size="icon" className="h-8 w-8 text-red-400 hover:text-white hover:bg-red-500 rounded-xl transition-all"><LogOut size={14}/></Button>
-                                    </DialogTrigger>
-                                    <DialogContent>
-                                        <DialogHeader><DialogTitle>Revoke Session?</DialogTitle><DialogDescription>End access for this specific device/IP.</DialogDescription></DialogHeader>
-                                        <DialogFooter><Button variant="destructive" onClick={() => revokeSession(s.id)}>Revoke Now</Button></DialogFooter>
-                                    </DialogContent>
-                                  </Dialog>
-                               </div>
-                             ))}
-                             {!sessions?.length && <div className="text-center py-12 text-[10px] text-slate-300 font-mono italic">NO_SESSIONS_FOUND</div>}
-                          </ScrollArea>
-                       </div>
-
-                       <div className="pt-6 border-t border-slate-100">
-                          <Dialog>
-                            <DialogTrigger asChild><Button variant="ghost" className="w-full text-red-500 hover:text-red-700 hover:bg-red-50 font-black text-[10px] tracking-widest uppercase">DESTROY IDENTITY</Button></DialogTrigger>
-                            <DialogContent>
-                              <DialogHeader><DialogTitle className="text-red-600">Permanently Delete Subject?</DialogTitle><DialogDescription>All data, sessions, and recovery options for this identity will be destroyed. This is irreversible.</DialogDescription></DialogHeader>
-                              <DialogFooter><Button variant="destructive" className="w-full font-black" onClick={handleDeleteUser}>CONFIRM_DESTRUCTION</Button></DialogFooter>
-                            </DialogContent>
-                          </Dialog>
-                       </div>
-                    </TabsContent>
-                    <TabsContent value="metadata" className="pt-6 space-y-4">
-                       <div className="space-y-2">
-                          <Label className="text-[10px] font-black uppercase text-slate-400 ml-1">Admin_Metadata</Label>
-                          <pre className="p-4 bg-slate-900 text-blue-400 rounded-2xl text-[10px] border font-mono shadow-inner overflow-auto h-40">
-                            {JSON.stringify(selectedUser.metadata_admin || {}, null, 2)}
-                          </pre>
-                       </div>
-                       <div className="space-y-2">
-                          <Label className="text-[10px] font-black uppercase text-slate-400 ml-1">Public_Metadata</Label>
-                          <pre className="p-4 bg-white border-2 rounded-2xl text-[10px] font-mono shadow-sm overflow-auto h-40">
-                            {JSON.stringify(selectedUser.metadata_public || {}, null, 2)}
-                          </pre>
-                       </div>
-                    </TabsContent>
-                  </Tabs>
-                </CardContent>
+                   <div className="pt-10 border-t-2 border-slate-100 mt-6">
+                      <Dialog>
+                        <DialogTrigger asChild><Button variant="ghost" className="w-full text-red-600 hover:text-white hover:bg-red-600 font-black text-[10px] tracking-[0.3em] uppercase py-6 rounded-2xl transition-all shadow-xl shadow-red-50">DESTROY_IDENTITY</Button></DialogTrigger>
+                        <DialogContent className="border-4 border-red-600 rounded-[2.5rem] bg-white">
+                            <CardHeader className="text-center pb-0">
+                                <AlertTriangle size={64} className="text-red-600 mx-auto mb-4 animate-pulse" />
+                                <DialogTitle className="font-black text-red-600 text-3xl uppercase tracking-tighter">Identity_Purge</DialogTitle>
+                            </CardHeader>
+                            <DialogDescription className="text-center font-bold text-slate-600 px-10 py-6">
+                                WARNING: This action will permanently wipe the subject from the Ory Vault and all associated DMS data. This signal cannot be reversed.
+                            </DialogDescription>
+                            <DialogFooter className="flex-col gap-4">
+                                <Button variant="destructive" className="w-full font-black py-8 rounded-2xl text-lg shadow-2xl" onClick={handleDeleteUser}>EXECUTE_DESTRUCTION</Button>
+                                <DialogClose asChild><Button variant="ghost" className="w-full font-black text-slate-400">ABORT_COMMAND</Button></DialogClose>
+                            </DialogFooter>
+                        </DialogContent>
+                      </Dialog>
+                   </div>
+                </div>
               </Card>
             </div>
           ) : (
-            <Card className="border-4 border-dashed rounded-[3rem] p-32 text-center sticky top-[88px] bg-white/50">
-              <div className="w-24 h-24 bg-white rounded-full flex items-center justify-center mx-auto mb-10 shadow-xl border-4 border-slate-50 text-slate-200">
+            <Card className="border-4 border-dashed border-slate-200 rounded-[4rem] p-32 text-center sticky top-[108px] bg-white/50">
+              <div className="w-24 h-24 bg-white rounded-full flex items-center justify-center mx-auto mb-10 shadow-2xl border-4 border-slate-50 text-slate-100">
                 <User size={48} />
               </div>
-              <p className="text-slate-400 font-black text-xs uppercase tracking-[0.4em] leading-loose">Awaiting Subject Selection<br/>for Posture Analysis</p>
+              <p className="text-slate-400 font-black text-xs uppercase tracking-[0.4em] leading-loose">Awaiting Subject Selection<br/>for Deep-Posture Analysis</p>
             </Card>
           )}
         </div>

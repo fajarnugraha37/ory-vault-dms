@@ -54,7 +54,13 @@ func NewRouter(s *store.Store, k *kratos.Client, kf keyfunc.Keyfunc) http.Handle
 
 		r.Get("/audit", h.GetAuditLogs)
 		r.Get("/identities", h.ListIdentities)
+
+		// --- RBAC Global Management ---
+		r.Get("/roles", h.ListRoles)
+		r.Post("/roles", h.CreateRole)
+		r.Delete("/roles/{roleID}", h.DeleteRole)
 		
+		// --- Individual Identity Ops ---
 		r.Get("/identities/{id}", h.GetIdentity)
 		r.Delete("/identities/{id}", h.DeleteIdentity)
 		r.Put("/identities/{id}/state", h.PatchState)
@@ -62,6 +68,12 @@ func NewRouter(s *store.Store, k *kratos.Client, kf keyfunc.Keyfunc) http.Handle
 		r.Post("/identities/{id}/recovery", h.PostRecovery)
 		r.Post("/identities/{id}/verify", h.PostVerify)
 		
+		// --- User Role Assignments ---
+		r.Get("/identities/{id}/roles", h.GetUserRoles)
+		r.Post("/identities/{id}/roles", h.AssignUserRole)
+		r.Delete("/identities/{id}/roles/{roleID}", h.RemoveUserRole)
+		
+		// --- Session Management ---
 		r.Get("/identities/{id}/sessions", h.ListSessions)
 		r.Delete("/identities/{id}/sessions", h.RevokeAllSessions)
 		r.Delete("/identities/{id}/sessions/{sid}", h.RevokeSession)
