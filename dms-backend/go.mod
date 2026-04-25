@@ -9,5 +9,7 @@ require (
 
 require (
 	github.com/MicahParks/jwkset v0.11.0 // indirect
+	github.com/go-chi/chi/v5 v5.2.5 // indirect
+	github.com/lib/pq v1.12.3 // indirect
 	golang.org/x/time v0.9.0 // indirect
 )

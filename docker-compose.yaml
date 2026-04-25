@@ -244,7 +244,9 @@ services:
       vault-keto:
         condition: service_healthy
     environment:
+      - DSN=postgres://ory:vault-pass@vault-db:5432/ory_vault?sslmode=disable&search_path=kratos
       - JWKS_URL=http://vault-oathkeeper:4456/.well-known/jwks.json
+      - KRATOS_ADMIN_URL=http://vault-kratos:4434
     networks:
       - ory-network
     healthcheck:

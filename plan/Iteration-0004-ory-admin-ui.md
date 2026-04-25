@@ -2,7 +2,7 @@
 
 ## Objektif
 
-Membangun antarmuka manajemen identitas yang 100% Zero-Trust, persisten, dan memiliki UX yang konsisten. Semua interaksi menggunakan **shadcn/ui**, audit dicatat ke **PostgreSQL**, dan mendukung operasional skala besar serta **Manajemen RBAC Dinamis**.
+Membangun antarmuka manajemen identitas yang 100% Zero-Trust, persisten, dan memiliki UX yang konsisten. Semua interaksi menggunakan **shadcn/ui**, audit dicatat ke **PostgreSQL**, dan mendukung operasional skala besar.
 
 ---
 
@@ -37,19 +37,21 @@ Membangun antarmuka manajemen identitas yang 100% Zero-Trust, persisten, dan mem
 
 ### Fasa D: Hardened Security Audit & Granular Sessions [IN PROGRESS]
 
-- [ ] **Individual Session Revocation**: Perbaiki rute agar bisa hapus satu sesi saja (Fix 404).
+- [x] **Individual Session Revocation**: Perbaiki rute agar bisa hapus satu sesi saja (Fix 404). [DONE]
+- [x] **Debug Routing Infrastructure**: Implementasi custom `NotFound` handler untuk melacak asal muasal 404. [DONE]
 - [ ] **Extended Session Info**: Tampilkan `Authentication Methods` dan detail `User-Agent`.
 - [ ] **Security Posture Audit**:
   - [ ] Tampilkan status 2FA (TOTP/WebAuthn) secara visual.
   - [ ] **Riwayat Login Terakhir**: Ekstrak dari metadata atau session data Kratos.
 
-### Fasa E: Persistence & Infrastructure Foundation [TODO]
+### Fasa E: Persistence & Infrastructure Foundation [DONE]
 
-- [ ] **SQL Audit Schema**: Inisialisasi tabel `audit_logs` di PostgreSQL.
-- [ ] **RBAC Storage**:
-  - [ ] Buat tabel `roles` dan `user_roles` di PostgreSQL untuk manajemen role dinamis.
-  - [ ] Backend memverifikasi klaim `role: admin` dari JWT Identity Metadata.
-  - [ ] Admin Dashboard untuk Role Management and assigment
+- [x] **Modular Refactoring**: Migrasi dari `main.go` tunggal ke struktur modular (`cmd/`, `internal/api`, `internal/handler`, `internal/store`).
+- [x] **Chi Router Integration**: Menggunakan router Chi untuk penanganan rute yang lebih bersih dan middleware-friendly.
+- [x] **SQL Audit Schema**: Inisialisasi tabel `audit_logs` di PostgreSQL.
+- [x] **RBAC Storage**: Buat tabel `roles` dan `user_roles` di PostgreSQL.
+- [x] **Backend Persistence**: Migrasi logic logging dari in-memory ke SQL.
+- [ ] **Admin Dashboard untuk Role Management**: UI untuk mengelola Role (Fasa H).
 - [ ] **Pagination Logic**: Server-side pagination untuk Users, Sessions, Audit, dan Roles.
 
 ### Fasa F: UI/UX Overhaul & Metadata Support [TODO]
@@ -72,19 +74,15 @@ Membangun antarmuka manajemen identitas yang 100% Zero-Trust, persisten, dan mem
 - [ ] **Impersonation**: Generate session token khusus untuk login sebagai user.
 - [ ] **Schema Switching**: Dropdown untuk mengganti schema identity.
 - [ ] **Bulk Operations**:
-- [ ] **Bulk Operations**:
   - [ ] Import/Export user via CSV.
   - [ ] **Bulk Cleanup**: Logika hapus/deaktivasi user yang tidak aktif selama > X hari.
 
 ### Fasa H: Enterprise RBAC Management [TODO]
 
 - [ ] **Role Management (CRUD)**:
-  - UI untuk **Tambah, Hapus, Ubah, dan Lihat** daftar Role sistem (e.g. `SuperAdmin`, `Editor`, `Viewer`).
-- [ ] **Role Assignment**:
-  - Fitur untuk **Assign/Revoke role** ke user tertentu dari detail profile.
-  - Dukungan multi-role per user.
-- [ ] **Role-Based API Guard**:
-  - Backend memvalidasi izin akses berdasarkan role yang tersimpan di DB, bukan sekadar suffix email.
+  - UI untuk **Tambah, Hapus, Ubah, dan Lihat** daftar Role sistem.
+- [ ] **Role Assignment**: Fitur untuk **Assign/Revoke role** ke user tertentu.
+- [ ] **Role-Based API Guard**: Backend memvalidasi izin akses berdasarkan role di DB.
 
 ---
 
@@ -131,3 +129,19 @@ Membangun antarmuka manajemen identitas yang 100% Zero-Trust, persisten, dan mem
 - **Root Cause**: Desain awal hanya menggunakan pengecekan email suffix untuk otorisasi admin.
 - **Problem**: Tidak fleksibel dan tidak mendukung pembagian tugas (*separation of duties*).
 - **Resolution**: Implementasi Manajemen Role Dinamis (Fasa H) dengan penyimpanan database persisten.
+
+### Issue 14: Shell Redirection Failure
+
+- **Root Cause**: PowerShell tidak mendukung operator `<` untuk import SQL ke Docker.
+- **Resolution**: Gunakan pipe `cat file | docker exec -i ...` untuk eksekusi SQL.
+
+### Issue 15: Go Build Failure (Unused Import)
+
+- **Root Cause**: Package `fmt` di-import di `store/postgres.go` tapi tidak digunakan setelah refactoring.
+- **Resolution**: Bersihkan unused import sebelum build.
+
+### Issue 16: Bloated Main.go
+
+- **Root Cause**: Menumpuk seluruh logic API, database, dan middleware dalam satu file.
+- **Problem**: Sangat sulit di-maintain dan di-test secara modular.
+- **Resolution**: Refactor total ke struktur folder `internal/` menggunakan router Chi.

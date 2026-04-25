@@ -10,8 +10,7 @@ interface Session {
   id: string
   active: boolean
   authenticated_at: string
-  expires_at: string
-  issued_at: string
+  authentication_methods: Array<{ method: string }>
   devices: Array<{
     ip_address: string
     user_agent: string
@@ -30,22 +29,19 @@ interface Identity {
   verifiable_addresses?: Array<{
     status: string
     verified: boolean
-    value: string
   }>
   credentials?: Record<string, any>
-  created_at: string
-  updated_at: string
 }
 
 export default function AdminUsersPage() {
   const { data: identities, error, mutate } = useSWR<Identity[]>('/admin-api/identities', fetcher)
+  
   const [selectedUser, setSelectedUser] = useState<Identity | null>(null)
   const [isEditing, setIsEditing] = useState(false)
   const [editTraits, setEditTraits] = useState<any>({})
   const [loading, setLoading] = useState<string | null>(null)
   const [recoveryData, setRecoveryData] = useState<any>(null)
 
-  // Fetch sessions only when a user is selected
   const { data: sessions, mutate: mutateSessions } = useSWR<Session[]>(
     selectedUser ? `/admin-api/identities/${selectedUser.id}/sessions` : null,
     fetcher
@@ -59,164 +55,117 @@ export default function AdminUsersPage() {
     }
   }, [selectedUser])
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this user? This cannot be undone.')) return
-    setLoading(id)
-    try {
-      await axios.delete(`/admin-api/identities/${id}`, { withCredentials: true })
-      mutate()
-      if (selectedUser?.id === id) setSelectedUser(null)
-    } catch (err) {
-      alert('Failed to delete user')
-    } finally {
-      setLoading(null)
-    }
-  }
+  // --- Actions ---
 
-  const toggleState = async (user: Identity) => {
-    const newState = user.state === 'active' ? 'inactive' : 'active'
-    if (!confirm(`Are you sure you want to ${newState === 'inactive' ? 'deactivate' : 'reactivate'} this user?`)) return
-    
-    setLoading(user.id)
+  const handleRevokeSession = async (sid: string) => {
+    if (!confirm('Revoke this specific session?')) return
+    setLoading(sid)
     try {
-      await axios.put(`/admin-api/identities/${user.id}/state`, { state: newState }, { withCredentials: true })
-      mutate()
-      if (selectedUser?.id === user.id) {
-        setSelectedUser({ ...user, state: newState })
-      }
-    } catch (err) {
-      alert('Failed to update user state')
-    } finally {
-      setLoading(null)
-    }
-  }
-
-  const handleUpdateTraits = async () => {
-    if (!selectedUser) return
-    setLoading(selectedUser.id)
-    try {
-      await axios.patch(`/admin-api/identities/${selectedUser.id}/traits`, editTraits, { withCredentials: true })
-      mutate()
-      setSelectedUser({ ...selectedUser, traits: editTraits })
-      setIsEditing(false)
-      alert('User traits updated successfully')
-    } catch (err) {
-      alert('Failed to update traits')
-    } finally {
-      setLoading(null)
-    }
-  }
-
-  const generateRecovery = async () => {
-    if (!selectedUser) return
-    setLoading(selectedUser.id)
-    try {
-      const res = await axios.post(`/admin-api/identities/${selectedUser.id}/recovery`, {}, { withCredentials: true })
-      setRecoveryData(res.data)
-    } catch (err) {
-      alert('Failed to generate recovery link')
-    } finally {
-      setLoading(null)
-    }
-  }
-
-  const verifyEmail = async () => {
-    if (!selectedUser) return
-    setLoading(selectedUser.id)
-    try {
-      await axios.post(`/admin-api/identities/${selectedUser.id}/verify`, {}, { withCredentials: true })
-      alert('Email verified successfully')
-      mutate()
-      const updated = await fetcher(`/admin-api/identities/${selectedUser.id}`)
-      setSelectedUser(updated)
-    } catch (err) {
-      alert('Failed to verify email')
-    } finally {
-      setLoading(null)
-    }
-  }
-
-  const revokeAllSessions = async (id: string) => {
-    if (!confirm('Are you sure you want to log out this user from ALL devices?')) return
-    setLoading(id)
-    try {
-      await axios.delete(`/admin-api/identities/${id}/sessions`, { withCredentials: true })
-      alert('All sessions revoked')
+      await axios.delete(`/admin-api/identities/${selectedUser!.id}/sessions/${sid}`, { withCredentials: true })
       mutateSessions()
-    } catch (err) {
-      alert('Failed to revoke sessions')
-    } finally {
-      setLoading(null)
-    }
+    } catch (err) { alert('Failed') } finally { setLoading(null) }
   }
 
-  if (error) return (
-    <div className="p-8 text-red-500 text-center">
-      <h1 className="text-2xl font-bold mb-4">Access Denied</h1>
-      <p>Only authorized administrators can access this panel.</p>
-      <a href="/" className="mt-4 inline-block text-blue-500 hover:underline">Return to Home</a>
-    </div>
-  )
-  
-  if (!identities) return <div className="p-8 text-center text-slate-500">Loading identities...</div>
+  const handleRevokeAllSessions = async () => {
+    if (!confirm('Revoke ALL sessions for this user?')) return
+    setLoading('revoke-all')
+    try {
+      await axios.delete(`/admin-api/identities/${selectedUser!.id}/sessions`, { withCredentials: true })
+      mutateSessions()
+    } catch (err) { alert('Failed') } finally { setLoading(null) }
+  }
 
-  const isEmailVerified = selectedUser?.verifiable_addresses?.[0]?.status === 'completed' || selectedUser?.verifiable_addresses?.[0]?.verified
+  const handleToggleState = async () => {
+    const newState = selectedUser!.state === 'active' ? 'inactive' : 'active'
+    if (!confirm(`Switch user to ${newState.toUpperCase()}?`)) return
+    setLoading('state')
+    try {
+      await axios.put(`/admin-api/identities/${selectedUser!.id}/state`, { state: newState }, { withCredentials: true })
+      mutate()
+      setSelectedUser({ ...selectedUser!, state: newState })
+    } catch (err) { alert('Failed') } finally { setLoading(null) }
+  }
+
+  const handleManualVerify = async () => {
+    if (!confirm('Mark email as verified manually?')) return
+    setLoading('verify')
+    try {
+      await axios.post(`/admin-api/identities/${selectedUser!.id}/verify`, {}, { withCredentials: true })
+      mutate()
+      const updated = await fetcher(`/admin-api/identities/${selectedUser!.id}`)
+      setSelectedUser(updated)
+    } catch (err) { alert('Failed') } finally { setLoading(null) }
+  }
+
+  const handleGenerateRecovery = async () => {
+    setLoading('recovery')
+    try {
+      const res = await axios.post(`/admin-api/identities/${selectedUser!.id}/recovery`, {}, { withCredentials: true })
+      setRecoveryData(res.data)
+    } catch (err) { alert('Failed') } finally { setLoading(null) }
+  }
+
+  const handleSaveTraits = async () => {
+    setLoading('traits')
+    try {
+      await axios.patch(`/admin-api/identities/${selectedUser!.id}/traits`, editTraits, { withCredentials: true })
+      mutate()
+      setSelectedUser({ ...selectedUser!, traits: editTraits })
+      setIsEditing(false)
+    } catch (err) { alert('Failed') } finally { setLoading(null) }
+  }
+
+  const handleDeleteUser = async () => {
+    if (!confirm('PERMANENTLY DELETE THIS USER?')) return
+    try {
+      await axios.delete(`/admin-api/identities/${selectedUser!.id}`, { withCredentials: true })
+      mutate()
+      setSelectedUser(null)
+    } catch (err) { alert('Failed') }
+  }
+
+  if (error) return <div className="p-8 text-red-500 font-black uppercase tracking-tighter text-center text-2xl">Access Denied // Admin Only</div>
+  if (!identities) return <div className="p-12 text-slate-400 font-mono text-xs animate-pulse text-center">SYNCING_VAULT_DATA...</div>
+
+  const is2FA = selectedUser?.credentials?.totp || selectedUser?.credentials?.webauthn
+  const isVerified = selectedUser?.verifiable_addresses?.[0]?.verified
 
   return (
-    <div className="p-8 max-w-7xl mx-auto">
-      <header className="flex justify-between items-start mb-12">
+    <div className="p-8 max-w-7xl mx-auto space-y-12 bg-white min-h-screen">
+      <header className="flex justify-between items-end border-b-4 border-slate-900 pb-8">
         <div>
-          <h1 className="text-4xl font-black text-slate-900 tracking-tight">Identity Vault</h1>
-          <p className="text-slate-500 mt-2 font-medium flex items-center gap-2">
-            <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
-            Zero Trust Administrator Control Plane
-          </p>
+          <h1 className="text-7xl font-black text-slate-900 tracking-tighter">VAULT_OPS</h1>
+          <p className="text-slate-500 font-mono text-xs mt-2 uppercase tracking-[0.5em] font-bold">Root Control Interface // Phase D active</p>
         </div>
-        <div className="flex gap-4">
-           <a href="/" className="px-5 py-2.5 bg-white border border-slate-200 text-slate-600 font-bold rounded-xl hover:bg-slate-50 transition-all shadow-sm">
-            Dashboard
-          </a>
-        </div>
+        <a href="/" className="px-10 py-4 bg-slate-900 text-white rounded-2xl font-black text-xs tracking-widest hover:bg-blue-600 transition-all shadow-[6px_6px_0px_0px_rgba(59,130,246,1)] active:translate-y-1 active:shadow-none">EXIT_TO_HUB</a>
       </header>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-        {/* Users Table */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-12">
+        {/* User Table */}
         <div className="lg:col-span-7">
-          <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
-            <table className="w-full text-left border-collapse">
-              <thead className="bg-slate-50 border-b border-slate-200">
+          <div className="bg-white border-4 border-slate-900 rounded-[2.5rem] shadow-[16px_16px_0px_0px_rgba(0,0,0,1)] overflow-hidden">
+            <table className="w-full text-left">
+              <thead className="bg-slate-900 text-white">
                 <tr>
-                  <th className="p-4 font-bold text-slate-500 text-xs uppercase tracking-widest">User Identity</th>
-                  <th className="p-4 font-bold text-slate-500 text-xs uppercase tracking-widest">Status</th>
-                  <th className="p-4 font-bold text-slate-500 text-xs uppercase tracking-widest text-right">Actions</th>
+                  <th className="p-8 font-black text-xs uppercase tracking-widest">Subject Identity</th>
+                  <th className="p-8 font-black text-xs uppercase tracking-widest text-center">Status</th>
                 </tr>
               </thead>
               <tbody>
                 {identities.map((user) => (
                   <tr 
                     key={user.id} 
-                    className={`border-b border-slate-100 hover:bg-slate-50 transition-colors cursor-pointer group ${selectedUser?.id === user.id ? 'bg-blue-50/50' : ''}`}
                     onClick={() => setSelectedUser(user)}
+                    className={`border-b-4 border-slate-50 cursor-pointer transition-all ${selectedUser?.id === user.id ? 'bg-blue-50' : 'hover:bg-slate-50'}`}
                   >
-                    <td className="p-4">
-                      <div className="font-bold text-slate-900 group-hover:text-blue-600 transition-colors">{user.traits.email}</div>
-                      <div className="text-[10px] text-slate-400 font-mono mt-1">{user.id}</div>
+                    <td className="p-8">
+                      <div className="font-black text-slate-900 text-2xl tracking-tight">{user.traits.email}</div>
+                      <div className="text-[10px] text-slate-400 font-mono mt-2 uppercase tracking-widest">{user.id}</div>
                     </td>
-                    <td className="p-4">
-                      <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider ${
-                        user.state === 'active' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
-                      }`}>
-                        {user.state}
-                      </span>
-                    </td>
-                    <td className="p-4 text-right">
-                      <button 
-                        className="text-slate-400 group-hover:text-blue-600 transition-colors"
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                          <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
-                        </svg>
-                      </button>
+                    <td className="p-8 text-center">
+                       <div className={`inline-block px-4 py-1.5 rounded-xl text-xs font-black tracking-widest ${user.state === 'active' ? 'bg-green-100 text-green-700 border-2 border-green-200' : 'bg-red-100 text-red-700 border-2 border-red-200'}`}>
+                        {user.state.toUpperCase()}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -225,195 +174,150 @@ export default function AdminUsersPage() {
           </div>
         </div>
 
-        {/* User Details Sidebar */}
+        {/* Sidebar */}
         <div className="lg:col-span-5">
           {selectedUser ? (
-            <div className="space-y-6 sticky top-8">
+            <div className="space-y-8 sticky top-8">
               {/* Profile Card */}
-              <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-8">
-                <div className="flex justify-between items-center mb-8">
-                  <h2 className="text-2xl font-black text-slate-900">User Profile</h2>
+              <div className="bg-white border-4 border-slate-900 rounded-[2.5rem] shadow-[16px_16px_0px_0px_rgba(59,130,246,1)] p-10 space-y-10">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <h2 className="text-4xl font-black text-slate-900 tracking-tighter uppercase italic">Subject Info</h2>
+                    <p className="text-xs font-bold text-slate-400 uppercase tracking-[0.2em] mt-1">Posture Analysis</p>
+                  </div>
                   <button 
                     onClick={() => setIsEditing(!isEditing)}
-                    className="text-xs font-bold text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg hover:bg-blue-100 transition-colors"
+                    className="text-xs font-black text-blue-600 bg-blue-50 px-5 py-2.5 rounded-2xl hover:bg-blue-100 transition-all border-4 border-blue-100"
                   >
-                    {isEditing ? 'CANCEL' : 'EDIT TRAITS'}
+                    {isEditing ? 'DISCARD' : 'EDIT_TRAITS'}
                   </button>
                 </div>
-                
+
                 {isEditing ? (
-                  <div className="space-y-5">
-                    <div>
-                      <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 ml-1">First Name</label>
-                      <input 
-                        type="text" 
-                        value={editTraits.first_name || ''} 
-                        onChange={e => setEditTraits({...editTraits, first_name: e.target.value})}
-                        className="w-full border border-slate-200 bg-slate-50 rounded-xl px-4 py-3 text-sm focus:ring-4 focus:ring-blue-50 focus:border-blue-500 outline-none transition-all"
-                      />
+                  <div className="space-y-6">
+                    <div className="space-y-2">
+                       <label className="text-[10px] font-black text-slate-400 uppercase ml-2">First Name</label>
+                       <input value={editTraits.first_name || ''} onChange={e => setEditTraits({...editTraits, first_name: e.target.value})} className="w-full border-4 border-slate-100 bg-slate-50 rounded-2xl px-6 py-4 font-bold text-lg outline-none focus:border-blue-500" />
                     </div>
-                    <div>
-                      <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 ml-1">Last Name</label>
-                      <input 
-                        type="text" 
-                        value={editTraits.last_name || ''} 
-                        onChange={e => setEditTraits({...editTraits, last_name: e.target.value})}
-                        className="w-full border border-slate-200 bg-slate-50 rounded-xl px-4 py-3 text-sm focus:ring-4 focus:ring-blue-50 focus:border-blue-500 outline-none transition-all"
-                      />
+                    <div className="space-y-2">
+                       <label className="text-[10px] font-black text-slate-400 uppercase ml-2">Last Name</label>
+                       <input value={editTraits.last_name || ''} onChange={e => setEditTraits({...editTraits, last_name: e.target.value})} className="w-full border-4 border-slate-100 bg-slate-50 rounded-2xl px-6 py-4 font-bold text-lg outline-none focus:border-blue-500" />
                     </div>
-                    <div>
-                      <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 ml-1">Division</label>
-                      <input 
-                        type="text" 
-                        value={editTraits.division || ''} 
-                        onChange={e => setEditTraits({...editTraits, division: e.target.value})}
-                        className="w-full border border-slate-200 bg-slate-50 rounded-xl px-4 py-3 text-sm focus:ring-4 focus:ring-blue-50 focus:border-blue-500 outline-none transition-all"
-                      />
+                    <div className="space-y-2">
+                       <label className="text-[10px] font-black text-slate-400 uppercase ml-2">Division</label>
+                       <input value={editTraits.division || ''} onChange={e => setEditTraits({...editTraits, division: e.target.value})} className="w-full border-4 border-slate-100 bg-slate-50 rounded-2xl px-6 py-4 font-bold text-lg outline-none focus:border-blue-500" />
                     </div>
-                    <button 
-                      onClick={handleUpdateTraits}
-                      disabled={loading === selectedUser.id}
-                      className="w-full bg-slate-900 text-white py-3 rounded-xl font-black text-sm hover:bg-slate-800 transition-all shadow-lg shadow-slate-200"
-                    >
-                      SAVE CHANGES
-                    </button>
+                    <button onClick={handleSaveTraits} className="w-full bg-slate-900 text-white py-5 rounded-2xl font-black text-sm uppercase tracking-[0.3em] shadow-xl active:translate-y-1">APPLY_CHANGES</button>
                   </div>
                 ) : (
-                  <div className="space-y-6">
-                    <div>
-                      <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Email Identity</label>
-                      <div className="flex items-center gap-2">
-                        <span className="text-slate-900 font-bold">{selectedUser.traits.email}</span>
-                        {isEmailVerified ? (
-                          <span className="text-[9px] bg-blue-600 text-white px-2 py-0.5 rounded-full font-black tracking-tighter">VERIFIED</span>
-                        ) : (
-                          <span className="text-[9px] bg-slate-200 text-slate-500 px-2 py-0.5 rounded-full font-black tracking-tighter">UNVERIFIED</span>
-                        )}
-                      </div>
+                  <div className="space-y-8">
+                    <div className="grid grid-cols-2 gap-6">
+                       <div className="p-6 bg-slate-50 rounded-3xl border-4 border-slate-100">
+                          <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Security</label>
+                          <div className={`text-sm font-black ${is2FA ? 'text-green-600' : 'text-amber-600'}`}>{is2FA ? '2FA_ENFORCED' : '2FA_NONE'}</div>
+                       </div>
+                       <div className="p-6 bg-slate-50 rounded-3xl border-4 border-slate-100">
+                          <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">E-Mail</label>
+                          <div className={`text-sm font-black ${isVerified ? 'text-green-600' : 'text-red-500'}`}>{isVerified ? 'VERIFIED' : 'PENDING'}</div>
+                       </div>
                     </div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">First Name</label>
-                        <div className="text-slate-900 font-medium">{selectedUser.traits.first_name || '-'}</div>
-                      </div>
-                      <div>
-                        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Last Name</label>
-                        <div className="text-slate-900 font-medium">{selectedUser.traits.last_name || '-'}</div>
-                      </div>
-                    </div>
-                    <div>
-                      <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Division</label>
-                      <div className="text-slate-900 font-medium">{selectedUser.traits.division || '-'}</div>
+                    
+                    <div className="space-y-4">
+                       <label className="text-xs font-black text-slate-400 uppercase tracking-widest ml-2">Identity Details</label>
+                       <div className="bg-slate-900 rounded-[2rem] p-8 space-y-4 font-mono text-sm font-bold text-white shadow-xl">
+                          <div className="flex justify-between border-b border-slate-800 pb-2"><span>NAME:</span> <span className="text-blue-400">{selectedUser.traits.first_name} {selectedUser.traits.last_name}</span></div>
+                          <div className="flex justify-between border-b border-slate-800 pb-2"><span>DEPT:</span> <span className="text-blue-400">{selectedUser.traits.division || 'N/A'}</span></div>
+                          <div className="flex justify-between border-b border-slate-800 pb-2"><span>EMAIL:</span> <span className="text-blue-400">{selectedUser.traits.email}</span></div>
+                          <div className="pt-2 text-[10px] text-slate-500 uppercase">UID: {selectedUser.id}</div>
+                       </div>
                     </div>
                   </div>
                 )}
-              </div>
 
-              {/* Security Audit & Sessions */}
-              <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-8">
-                <div className="flex justify-between items-center mb-6">
-                  <h3 className="text-xl font-black text-slate-900">Security Audit</h3>
-                  <button 
-                    onClick={() => revokeAllSessions(selectedUser.id)}
-                    className="text-[10px] font-black text-red-600 hover:underline"
-                  >
-                    REVOKE ALL SESSIONS
-                  </button>
-                </div>
+                {/* Operations */}
+                <div className="space-y-6 pt-10 border-t-4 border-slate-100">
+                   <h4 className="text-xs font-black text-slate-900 uppercase tracking-[0.3em] mb-4 italic text-center">Administrative_Actions</h4>
+                   
+                   <div className="grid grid-cols-2 gap-4">
+                      <button onClick={handleToggleState} className="bg-slate-900 text-white py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-blue-600 transition-all shadow-lg active:translate-y-1">Toggle Access</button>
+                      <button onClick={handleGenerateRecovery} className="bg-indigo-600 text-white py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-indigo-700 transition-all shadow-lg active:translate-y-1 shadow-indigo-100">Recovery Link</button>
+                   </div>
 
-                <div className="space-y-4">
-                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest">Active Device Sessions</label>
-                  {sessions && sessions.length > 0 ? (
-                    <div className="space-y-3">
-                      {sessions.map((s, idx) => (
-                        <div key={s.id} className="p-4 bg-slate-50 rounded-xl border border-slate-100 relative overflow-hidden">
-                          <div className="flex items-start justify-between">
-                            <div>
-                              <div className="text-xs font-bold text-slate-900 flex items-center gap-2">
-                                <span className={`w-1.5 h-1.5 rounded-full ${s.active ? 'bg-green-500' : 'bg-slate-300'}`}></span>
-                                {s.devices[0]?.ip_address || 'Unknown IP'}
+                   {!isVerified && (
+                      <button onClick={handleManualVerify} className="w-full bg-blue-600 text-white py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-blue-700 transition-all shadow-lg shadow-blue-100 active:translate-y-1">Manually Verify Email</button>
+                   )}
+
+                   {recoveryData && (
+                      <div className="p-6 bg-slate-900 text-green-400 rounded-3xl text-xs break-all font-mono leading-relaxed mt-6 border-4 border-blue-900 shadow-inner">
+                        <p className="mb-3 text-white font-black uppercase tracking-[0.2em] border-b border-slate-700 pb-2 text-[10px]">Confidential Recovery URL:</p>
+                        {recoveryData.recovery_link}
+                      </div>
+                   )}
+
+                   {/* Session Control */}
+                   <div className="mt-10 space-y-6 bg-slate-50 p-8 rounded-[2.5rem] border-4 border-slate-100 shadow-inner">
+                      <div className="flex justify-between items-center px-2">
+                        <label className="text-xs font-black text-slate-900 uppercase tracking-widest italic">Session_Control</label>
+                        <button 
+                          onClick={handleRevokeAllSessions} 
+                          className="bg-red-600 text-white px-5 py-2 rounded-xl font-black text-[10px] uppercase tracking-widest hover:bg-red-700 transition-all shadow-lg shadow-red-100"
+                        >
+                          Revoke All
+                        </button>
+                      </div>
+                      
+                      <div className="space-y-4 max-h-72 overflow-y-auto pr-2 custom-scrollbar">
+                        {sessions?.map(s => (
+                          <div key={s.id} className="group p-6 bg-white border-4 border-slate-100 rounded-3xl hover:border-slate-900 transition-all relative shadow-sm">
+                            <div className="flex justify-between items-start">
+                              <div className="space-y-2">
+                                <div className="text-sm font-black text-slate-900 flex items-center gap-3">
+                                  <span className={`w-3 h-3 rounded-full ${s.active ? 'bg-green-500 animate-pulse' : 'bg-slate-300'}`}></span>
+                                  {s.devices[0]?.ip_address}
+                                </div>
+                                <div className="text-[9px] text-slate-400 font-mono line-clamp-2 max-w-[200px]" title={s.devices[0]?.user_agent}>{s.devices[0]?.user_agent}</div>
+                                <div className="flex flex-wrap gap-2">
+                                  {s.authentication_methods.map((m, i) => (
+                                    <span key={i} className="text-[8px] bg-slate-900 text-white px-2 py-0.5 rounded font-black uppercase tracking-tighter">{m.method}</span>
+                                  ))}
+                                </div>
                               </div>
-                              <div className="text-[10px] text-slate-500 mt-1 truncate max-w-[200px]">
-                                {s.devices[0]?.user_agent || 'Unknown Device'}
-                              </div>
-                              <div className="text-[9px] text-slate-400 mt-2 font-mono uppercase tracking-tighter">
-                                Last Active: {new Date(s.authenticated_at).toLocaleString()}
-                              </div>
+                              <button 
+                                onClick={() => handleRevokeSession(s.id)}
+                                className="bg-red-50 text-red-600 p-3 rounded-xl hover:bg-red-600 hover:text-white transition-all shadow-sm active:scale-90"
+                              >
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={4} d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                              </button>
                             </div>
-                            <span className="text-[8px] font-black text-slate-300 font-mono">#{idx+1}</span>
                           </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="py-8 text-center bg-slate-50 rounded-xl border border-dashed border-slate-200 text-xs text-slate-400 italic">
-                      No active sessions found.
-                    </div>
-                  )}
-                </div>
+                        ))}
+                        {!sessions?.length && <div className="text-center py-10 text-xs text-slate-300 font-black italic tracking-widest uppercase">No Active Signals</div>}
+                      </div>
+                   </div>
 
-                <div className="mt-8 space-y-3">
-                   <button 
-                    onClick={() => toggleState(selectedUser)}
-                    disabled={loading === selectedUser.id}
-                    className={`w-full py-2.5 rounded-xl font-bold text-xs tracking-wide transition-all ${
-                      selectedUser.state === 'active' 
-                        ? 'bg-amber-50 text-amber-700 hover:bg-amber-100' 
-                        : 'bg-green-50 text-green-700 hover:bg-green-100'
-                    }`}
-                  >
-                    {selectedUser.state === 'active' ? 'DEACTIVATE ACCOUNT' : 'REACTIVATE ACCOUNT'}
-                  </button>
-
-                  <button 
-                    onClick={generateRecovery}
-                    className="w-full py-2.5 bg-indigo-50 text-indigo-700 rounded-xl font-bold text-xs tracking-wide hover:bg-indigo-100 transition-all"
-                  >
-                    GENERATE RECOVERY LINK
-                  </button>
-
-                  {recoveryData && (
-                    <div className="p-4 bg-indigo-900 text-white rounded-xl text-[9px] break-all font-mono leading-relaxed shadow-inner">
-                      <p className="mb-2 text-indigo-300 font-black uppercase tracking-widest border-b border-indigo-800 pb-1">Confidential Link:</p>
-                      {recoveryData.recovery_link}
-                    </div>
-                  )}
-
-                  {!isEmailVerified && (
-                    <button 
-                      onClick={verifyEmail}
-                      className="w-full py-2.5 bg-blue-50 text-blue-700 rounded-xl font-bold text-xs tracking-wide hover:bg-blue-100 transition-all"
-                    >
-                      MANUALLY VERIFY EMAIL
-                    </button>
-                  )}
-
-                  <div className="pt-4 mt-4 border-t border-slate-100">
-                    <button 
-                      onClick={() => handleDelete(selectedUser.id)}
-                      className="w-full py-2.5 bg-red-50 text-red-700 rounded-xl font-bold text-xs tracking-wide hover:bg-red-100 transition-all"
-                    >
-                      PERMANENTLY DELETE
-                    </button>
-                  </div>
+                   <div className="pt-10 mt-10 border-t-4 border-slate-100">
+                      <button onClick={handleDeleteUser} className="w-full bg-white text-red-600 border-4 border-red-600 py-5 rounded-3xl font-black text-xs uppercase tracking-[0.4em] hover:bg-red-600 hover:text-white transition-all shadow-xl shadow-red-50 active:translate-y-1">Destroy Identity</button>
+                   </div>
                 </div>
               </div>
             </div>
           ) : (
-            <div className="bg-slate-50 border-2 border-dashed border-slate-200 rounded-3xl p-16 text-center text-slate-400 sticky top-8">
-              <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center mx-auto mb-6 shadow-sm border border-slate-100 text-slate-200">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <div className="bg-slate-50 border-4 border-dashed border-slate-200 rounded-[4rem] p-32 text-center sticky top-8">
+               <div className="w-24 h-24 bg-white rounded-full flex items-center justify-center mx-auto mb-10 shadow-lg border-4 border-slate-100 text-slate-100">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                 </svg>
               </div>
-              <p className="font-bold text-sm">Select an identity from the vault to inspect security posture and manage lifecycle.</p>
+              <p className="text-slate-400 font-black text-sm uppercase tracking-[0.4em] leading-loose">Awaiting Subject Selection<br/>for Deep-Posture Analysis</p>
             </div>
           )}
         </div>
       </div>
       
-      <footer className="mt-20 py-8 border-t border-slate-100 text-[10px] text-slate-400 text-center font-bold tracking-widest uppercase">
-        Zero-Trust Admin Proxy // Authenticated via RS256 JWT // Ory Kratos 1.1.0 Internal Port 4434
+      <footer className="mt-32 py-12 border-t-4 border-slate-900 text-xs text-slate-400 text-center font-black tracking-[1em] uppercase">
+        Zero-Trust Admin Proxy // Core Engine: Ory Stack // Hardware: Vault_Ops_04
       </footer>
     </div>
   )
