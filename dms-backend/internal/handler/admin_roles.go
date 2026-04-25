@@ -3,6 +3,7 @@ package handler
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/nugra/ory-vault/dms-backend/internal/middleware"
@@ -11,7 +12,11 @@ import (
 // --- Role Management ---
 
 func (h *AdminHandler) ListRoles(w http.ResponseWriter, r *http.Request) {
-	roles, err := h.Store.ListRoles(r.Context())
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	if limit <= 0 { limit = 50 }
+	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+
+	roles, err := h.Store.ListRoles(r.Context(), limit, offset)
 	if err != nil { h.respondWithError(w, 500, err.Error()); return }
 	h.respondWithJSON(w, 200, roles)
 }

@@ -17,16 +17,25 @@ func NewClient(adminURL string) *Client {
 	return &Client{api: client.NewAPIClient(cfg)}
 }
 
+func (c *Client) GetAPI() *client.APIClient {
+	return c.api
+}
+
 func (c *Client) GetIdentity(ctx context.Context, id string) (*client.Identity, error) {
 	log.Printf("KRATOS_OFFICIAL: Fetching identity %s", id)
 	identity, _, err := c.api.IdentityAPI.GetIdentity(ctx, id).Execute()
 	return identity, err
 }
 
-func (c *Client) ListIdentities(ctx context.Context) ([]client.Identity, error) {
-	log.Printf("KRATOS_OFFICIAL: Listing all identities")
-	identities, _, err := c.api.IdentityAPI.ListIdentities(ctx).Execute()
-	return identities, err
+func (c *Client) ListIdentities(ctx context.Context, pageSize int64, pageToken string) ([]client.Identity, string, error) {
+	log.Printf("KRATOS_OFFICIAL: Listing identities (size: %d, token: %s)", pageSize, pageToken)
+	req := c.api.IdentityAPI.ListIdentities(ctx)
+	if pageSize > 0 { req = req.PageSize(pageSize) }
+	if pageToken != "" { req = req.PageToken(pageToken) }
+	
+	identities, _, err := req.Execute()
+	if err != nil { return nil, "", err }
+	return identities, "", nil
 }
 
 func (c *Client) PatchIdentity(ctx context.Context, id string, patches []client.JsonPatch) error {
@@ -35,9 +44,13 @@ func (c *Client) PatchIdentity(ctx context.Context, id string, patches []client.
 	return err
 }
 
-func (c *Client) ListSessions(ctx context.Context, id string) ([]client.Session, error) {
-	log.Printf("KRATOS_OFFICIAL: Listing sessions for %s", id)
-	sessions, _, err := c.api.IdentityAPI.ListIdentitySessions(ctx, id).Execute()
+func (c *Client) ListSessions(ctx context.Context, id string, pageSize int64, pageToken string) ([]client.Session, error) {
+	log.Printf("KRATOS_OFFICIAL: Listing sessions for %s (size: %d)", id, pageSize)
+	req := c.api.IdentityAPI.ListIdentitySessions(ctx, id)
+	if pageSize > 0 { req = req.PageSize(pageSize) }
+	if pageToken != "" { req = req.PageToken(pageToken) }
+	
+	sessions, _, err := req.Execute()
 	return sessions, err
 }
 

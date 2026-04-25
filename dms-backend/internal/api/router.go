@@ -18,14 +18,12 @@ import (
 func NewRouter(s *store.Store, k *kratos.Client, kf keyfunc.Keyfunc) http.Handler {
 	r := chi.NewRouter()
 
-	// Enterprise Standard Middlewares
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Timeout(60 * time.Second))
 
-	// Custom 404 Logging
 	r.NotFound(func(w http.ResponseWriter, r *http.Request) {
 		log.Printf("DEBUG 404: Route Not Found -> %s %s", r.Method, r.URL.Path)
 		w.Header().Set("Content-Type", "application/json")
@@ -35,7 +33,6 @@ func NewRouter(s *store.Store, k *kratos.Client, kf keyfunc.Keyfunc) http.Handle
 
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("OK")) })
 
-	// User Routes
 	r.Route("/api", func(r chi.Router) {
 		r.Use(internal_mw.AuthMiddleware(kf))
 		r.Get("/me", func(w http.ResponseWriter, r *http.Request) {
@@ -47,7 +44,6 @@ func NewRouter(s *store.Store, k *kratos.Client, kf keyfunc.Keyfunc) http.Handle
 
 	h := handler.NewAdminHandler(s, k)
 	
-	// Admin API - FLAT ROUTES (Best Practice for explicit auditing)
 	r.Route("/admin-api", func(r chi.Router) {
 		r.Use(internal_mw.AuthMiddleware(kf))
 		r.Use(internal_mw.AdminOnly(s, k))
@@ -59,6 +55,10 @@ func NewRouter(s *store.Store, k *kratos.Client, kf keyfunc.Keyfunc) http.Handle
 		r.Get("/roles", h.ListRoles)
 		r.Post("/roles", h.CreateRole)
 		r.Delete("/roles/{roleID}", h.DeleteRole)
+
+		// --- Bulk Operations ---
+		r.Post("/bulk/cleanup", h.BulkCleanupInactive)
+		r.Post("/bulk/import", h.BulkImportIdentities)
 		
 		// --- Individual Identity Ops ---
 		r.Get("/identities/{id}", h.GetIdentity)
@@ -67,6 +67,8 @@ func NewRouter(s *store.Store, k *kratos.Client, kf keyfunc.Keyfunc) http.Handle
 		r.Patch("/identities/{id}/traits", h.PatchTraits)
 		r.Post("/identities/{id}/recovery", h.PostRecovery)
 		r.Post("/identities/{id}/verify", h.PostVerify)
+		r.Post("/identities/{id}/impersonate", h.ImpersonateSubject)
+		r.Put("/identities/{id}/schema", h.SwitchIdentitySchema)
 		
 		// --- User Role Assignments ---
 		r.Get("/identities/{id}/roles", h.GetUserRoles)

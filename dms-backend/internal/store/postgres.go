@@ -68,9 +68,9 @@ func (s *Store) CreateRole(ctx context.Context, id, description string) error {
 	return err
 }
 
-func (s *Store) ListRoles(ctx context.Context) ([]Role, error) {
-	query := `SELECT id, description FROM enterprise.roles ORDER BY id ASC`
-	rows, err := s.db.QueryContext(ctx, query)
+func (s *Store) ListRoles(ctx context.Context, limit, offset int) ([]Role, error) {
+	query := `SELECT id, description FROM enterprise.roles ORDER BY id ASC LIMIT $1 OFFSET $2`
+	rows, err := s.db.QueryContext(ctx, query, limit, offset)
 	if err != nil { return nil, err }
 	defer rows.Close()
 
