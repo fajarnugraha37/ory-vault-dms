@@ -132,11 +132,18 @@ function LoginContent() {
             return null
           })}
         </form>
-        <div className="mt-4 text-center text-sm text-gray-600">
-          Don't have an account?{" "}
-          <a href="/auth/registration" className="text-blue-600 hover:underline">
-            Register
-          </a>
+        <div className="mt-6 text-center space-y-2 text-sm text-gray-600">
+          <div>
+            <a href="/auth/recovery" className="text-blue-600 hover:underline">
+              Forgot your password?
+            </a>
+          </div>
+          <div>
+            Don't have an account?{" "}
+            <a href="/auth/registration" className="text-blue-600 hover:underline">
+              Register
+            </a>
+          </div>
         </div>
       </div>
     </div>

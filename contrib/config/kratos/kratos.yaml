@@ -8,6 +8,10 @@ selfservice:
       enabled: true
       config:
         haveibeenpwned_enabled: false
+    link:
+      enabled: true
+    code:
+      enabled: true
   flows:
     error:
       ui_url: https://ory-vault.test/auth/error
@@ -17,6 +21,7 @@ selfservice:
     recovery:
       enabled: true
       ui_url: https://ory-vault.test/auth/recovery
+      use: link
     verification:
       enabled: true
       ui_url: https://ory-vault.test/auth/verification
@@ -60,7 +65,7 @@ log:
 
 courier:
   smtp:
-    connection_uri: smtp://vault-mailpit:1025/?skip_ssl_verify=true
+    connection_uri: smtp://vault-mailpit:1025/?skip_ssl_verify=true&disable_starttls=true
     from_address: noreply@ory-vault.test
     from_name: ORY Vault DMS
 

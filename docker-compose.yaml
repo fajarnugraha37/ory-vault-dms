@@ -59,6 +59,21 @@ services:
         limits:
           memory: 256M
 
+  vault-kratos-courier:
+    image: oryd/kratos:v1.1
+    container_name: vault-kratos-courier
+    restart: unless-stopped
+    depends_on:
+      vault-db:
+        condition: service_healthy
+    environment:
+      - DSN=postgres://ory:vault-pass@vault-db:5432/ory_vault?sslmode=disable&search_path=kratos
+    command: courier watch -c /etc/config/kratos/kratos.yaml
+    volumes:
+      - ./contrib/config/kratos:/etc/config/kratos
+    networks:
+      - ory-network
+
   vault-keto:
     image: oryd/keto:v0.11
     container_name: vault-keto

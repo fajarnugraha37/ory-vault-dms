@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"regexp"
 	"strings"
 
 	"github.com/MicahParks/keyfunc/v3"
@@ -128,6 +129,156 @@ func SimpleAdminCheck(next http.Handler) http.Handler {
 	})
 }
 
+// Regex for Admin API Paths
+var (
+	reListIdentities    = regexp.MustCompile(`^/admin-api/identities$`)
+	reSingleIdentity    = regexp.MustCompile(`^/admin-api/identities/([a-z0-9-]+)$`)
+	reIdentityState     = regexp.MustCompile(`^/admin-api/identities/([a-z0-9-]+)/state$`)
+	reIdentityTraits    = regexp.MustCompile(`^/admin-api/identities/([a-z0-9-]+)/traits$`)
+	reIdentityRecovery  = regexp.MustCompile(`^/admin-api/identities/([a-z0-9-]+)/recovery$`)
+	reIdentityVerify    = regexp.MustCompile(`^/admin-api/identities/([a-z0-9-]+)/verify$`)
+	reIdentitySessions  = regexp.MustCompile(`^/admin-api/identities/([a-z0-9-]+)/sessions$`)
+)
+
+func AdminHandler(w http.ResponseWriter, r *http.Request) {
+	adminID := r.Context().Value(UserIDKey).(string)
+	path := r.URL.Path
+
+	// 1. List Identities
+	if reListIdentities.MatchString(path) {
+		if r.Method != "GET" {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		resp, _ := http.Get(fmt.Sprintf("%s/admin/identities", kratosAdminURL))
+		defer resp.Body.Close()
+		w.Header().Set("Content-Type", "application/json")
+		io.Copy(w, resp.Body)
+		return
+	}
+
+	// 2. State Update
+	if matches := reIdentityState.FindStringSubmatch(path); matches != nil {
+		targetID := matches[1]
+		if r.Method == "PUT" {
+			var body struct{ State string `json:"state"` }
+			json.NewDecoder(r.Body).Decode(&body)
+			patch := []map[string]interface{}{{"op": "replace", "path": "/state", "value": body.State}}
+			patchJSON, _ := json.Marshal(patch)
+			req, _ := http.NewRequest("PATCH", fmt.Sprintf("%s/admin/identities/%s", kratosAdminURL, targetID), bytes.NewBuffer(patchJSON))
+			req.Header.Set("Content-Type", "application/json-patch+json")
+			resp, _ := http.DefaultClient.Do(req)
+			defer resp.Body.Close()
+			log.Printf("AUDIT: Admin %s patched state for %s", adminID, targetID)
+			w.WriteHeader(resp.StatusCode)
+			io.Copy(w, resp.Body)
+			return
+		}
+	}
+
+	// 3. Trait Update
+	if matches := reIdentityTraits.FindStringSubmatch(path); matches != nil {
+		targetID := matches[1]
+		if r.Method == "PATCH" {
+			var traits map[string]interface{}
+			json.NewDecoder(r.Body).Decode(&traits)
+			patch := []map[string]interface{}{{"op": "replace", "path": "/traits", "value": traits}}
+			patchJSON, _ := json.Marshal(patch)
+			req, _ := http.NewRequest("PATCH", fmt.Sprintf("%s/admin/identities/%s", kratosAdminURL, targetID), bytes.NewBuffer(patchJSON))
+			req.Header.Set("Content-Type", "application/json-patch+json")
+			resp, _ := http.DefaultClient.Do(req)
+			defer resp.Body.Close()
+			log.Printf("AUDIT: Admin %s updated traits for %s", adminID, targetID)
+			w.WriteHeader(resp.StatusCode)
+			io.Copy(w, resp.Body)
+			return
+		}
+	}
+
+	// 4. Manual Recovery
+	if matches := reIdentityRecovery.FindStringSubmatch(path); matches != nil {
+		targetID := matches[1]
+		if r.Method == "POST" {
+			body := map[string]string{"identity_id": targetID}
+			bodyJSON, _ := json.Marshal(body)
+			req, _ := http.NewRequest("POST", fmt.Sprintf("%s/admin/recovery/link", kratosAdminURL), bytes.NewBuffer(bodyJSON))
+			req.Header.Set("Content-Type", "application/json")
+			resp, _ := http.DefaultClient.Do(req)
+			defer resp.Body.Close()
+			log.Printf("AUDIT: Admin %s generated recovery link for %s", adminID, targetID)
+			w.WriteHeader(resp.StatusCode)
+			w.Header().Set("Content-Type", "application/json")
+			io.Copy(w, resp.Body)
+			return
+		}
+	}
+
+	// 5. Manual Verify
+	if matches := reIdentityVerify.FindStringSubmatch(path); matches != nil {
+		targetID := matches[1]
+		if r.Method == "POST" {
+			// Fetch to get verifiable address ID
+			respGet, _ := http.Get(fmt.Sprintf("%s/admin/identities/%s", kratosAdminURL, targetID))
+			var identity map[string]interface{}
+			json.NewDecoder(respGet.Body).Decode(&identity)
+			respGet.Body.Close()
+
+			patch := []map[string]interface{}{
+				{"op": "replace", "path": "/verifiable_addresses/0/status", "value": "completed"},
+				{"op": "replace", "path": "/verifiable_addresses/0/verified", "value": true},
+			}
+			patchJSON, _ := json.Marshal(patch)
+			req, _ := http.NewRequest("PATCH", fmt.Sprintf("%s/admin/identities/%s", kratosAdminURL, targetID), bytes.NewBuffer(patchJSON))
+			req.Header.Set("Content-Type", "application/json-patch+json")
+			resp, _ := http.DefaultClient.Do(req)
+			defer resp.Body.Close()
+			log.Printf("AUDIT: Admin %s verified %s", adminID, targetID)
+			w.WriteHeader(resp.StatusCode)
+			return
+		}
+	}
+
+	// 6. Sessions Management
+	if matches := reIdentitySessions.FindStringSubmatch(path); matches != nil {
+		targetID := matches[1]
+		if r.Method == "GET" {
+			resp, _ := http.Get(fmt.Sprintf("%s/admin/identities/%s/sessions", kratosAdminURL, targetID))
+			defer resp.Body.Close()
+			w.Header().Set("Content-Type", "application/json")
+			io.Copy(w, resp.Body)
+			return
+		} else if r.Method == "DELETE" {
+			req, _ := http.NewRequest("DELETE", fmt.Sprintf("%s/admin/identities/%s/sessions", kratosAdminURL, targetID), nil)
+			resp, _ := http.DefaultClient.Do(req)
+			defer resp.Body.Close()
+			log.Printf("AUDIT: Admin %s revoked sessions for %s", adminID, targetID)
+			w.WriteHeader(resp.StatusCode)
+			return
+		}
+	}
+
+	// 7. Single Identity (GET/DELETE)
+	if matches := reSingleIdentity.FindStringSubmatch(path); matches != nil {
+		targetID := matches[1]
+		if r.Method == "GET" {
+			resp, _ := http.Get(fmt.Sprintf("%s/admin/identities/%s", kratosAdminURL, targetID))
+			defer resp.Body.Close()
+			w.Header().Set("Content-Type", "application/json")
+			io.Copy(w, resp.Body)
+			return
+		} else if r.Method == "DELETE" {
+			req, _ := http.NewRequest("DELETE", fmt.Sprintf("%s/admin/identities/%s", kratosAdminURL, targetID), nil)
+			resp, _ := http.DefaultClient.Do(req)
+			defer resp.Body.Close()
+			log.Printf("AUDIT: Admin %s deleted %s", adminID, targetID)
+			w.WriteHeader(resp.StatusCode)
+			return
+		}
+	}
+
+	w.WriteHeader(http.StatusNotFound)
+}
+
 func main() {
 	mux := http.NewServeMux()
 
@@ -147,128 +298,8 @@ func main() {
 		json.NewEncoder(w).Encode(resp)
 	})))
 
-	mux.Handle("/admin-api/identities", AuthMiddleware(SimpleAdminCheck(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		adminID := r.Context().Value(UserIDKey).(string)
-		if r.Method == "GET" {
-			resp, err := http.Get(fmt.Sprintf("%s/admin/identities", kratosAdminURL))
-			if err != nil {
-				log.Printf("Admin List Error: %v", err)
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-			defer resp.Body.Close()
-			log.Printf("AUDIT: Admin %s listed all identities", adminID)
-			w.Header().Set("Content-Type", "application/json")
-			io.Copy(w, resp.Body)
-			return
-		}
-		w.WriteHeader(http.StatusMethodNotAllowed)
-	}))))
-
-	mux.Handle("/admin-api/identities/", AuthMiddleware(SimpleAdminCheck(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		adminID := r.Context().Value(UserIDKey).(string)
-		pathParts := strings.Split(strings.TrimPrefix(r.URL.Path, "/admin-api/identities/"), "/")
-		targetID := pathParts[0]
-
-		if targetID == "" {
-			w.WriteHeader(http.StatusBadRequest)
-			return
-		}
-
-		subResource := ""
-		if len(pathParts) > 1 {
-			subResource = pathParts[1]
-		}
-
-		switch subResource {
-		case "": // /admin-api/identities/{id}
-			if r.Method == "GET" {
-				resp, err := http.Get(fmt.Sprintf("%s/admin/identities/%s", kratosAdminURL, targetID))
-				if err != nil {
-					http.Error(w, err.Error(), http.StatusInternalServerError)
-					return
-				}
-				defer resp.Body.Close()
-				w.Header().Set("Content-Type", "application/json")
-				io.Copy(w, resp.Body)
-			} else if r.Method == "DELETE" {
-				req, _ := http.NewRequest("DELETE", fmt.Sprintf("%s/admin/identities/%s", kratosAdminURL, targetID), nil)
-				resp, err := http.DefaultClient.Do(req)
-				if err != nil {
-					http.Error(w, err.Error(), http.StatusInternalServerError)
-					return
-				}
-				defer resp.Body.Close()
-				log.Printf("AUDIT: Admin %s deleted identity %s", adminID, targetID)
-				w.WriteHeader(resp.StatusCode)
-				io.Copy(w, resp.Body)
-			} else {
-				w.WriteHeader(http.StatusMethodNotAllowed)
-			}
-
-		case "state": // /admin-api/identities/{id}/state
-			if r.Method == "PUT" {
-				var body struct {
-					State string `json:"state"`
-				}
-				if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-					w.WriteHeader(http.StatusBadRequest)
-					return
-				}
-
-				// FIX: Gunakan PATCH (JSON Patch RFC 6902) untuk menghindari error credentials
-				patch := []map[string]interface{}{
-					{
-						"op":    "replace",
-						"path":  "/state",
-						"value": body.State,
-					},
-				}
-				patchJSON, _ := json.Marshal(patch)
-				
-				req, _ := http.NewRequest("PATCH", fmt.Sprintf("%s/admin/identities/%s", kratosAdminURL, targetID), bytes.NewBuffer(patchJSON))
-				req.Header.Set("Content-Type", "application/json-patch+json")
-				
-				respUpdate, err := http.DefaultClient.Do(req)
-				if err != nil {
-					http.Error(w, err.Error(), http.StatusInternalServerError)
-					return
-				}
-				defer respUpdate.Body.Close()
-
-				log.Printf("AUDIT: Admin %s patched identity %s state to %s", adminID, targetID, body.State)
-				w.WriteHeader(respUpdate.StatusCode)
-				io.Copy(w, respUpdate.Body)
-			}
-
-		case "sessions": // /admin-api/identities/{id}/sessions
-			if r.Method == "GET" {
-				resp, err := http.Get(fmt.Sprintf("%s/admin/identities/%s/sessions", kratosAdminURL, targetID))
-				if err != nil {
-					http.Error(w, err.Error(), http.StatusInternalServerError)
-					return
-				}
-				defer resp.Body.Close()
-				w.Header().Set("Content-Type", "application/json")
-				io.Copy(w, resp.Body)
-			} else if r.Method == "DELETE" {
-				req, _ := http.NewRequest("DELETE", fmt.Sprintf("%s/admin/identities/%s/sessions", kratosAdminURL, targetID), nil)
-				resp, err := http.DefaultClient.Do(req)
-				if err != nil {
-					http.Error(w, err.Error(), http.StatusInternalServerError)
-					return
-				}
-				defer resp.Body.Close()
-				log.Printf("AUDIT: Admin %s revoked all sessions for identity %s", adminID, targetID)
-				w.WriteHeader(resp.StatusCode)
-			} else {
-				w.WriteHeader(http.StatusMethodNotAllowed)
-			}
-
-		default:
-			w.WriteHeader(http.StatusNotFound)
-		}
-	}))))
+	// Central Admin Handler dengan Regex Matching yang ketat
+	mux.Handle("/admin-api/", AuthMiddleware(SimpleAdminCheck(http.HandlerFunc(AdminHandler))))
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, "ORY Vault DMS Backend.")

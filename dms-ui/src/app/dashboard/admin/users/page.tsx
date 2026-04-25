@@ -2,7 +2,7 @@
 
 import useSWR from 'swr'
 import axios from 'axios'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 
 const fetcher = (url: string) => axios.get(url, { withCredentials: true }).then(res => res.data)
 
@@ -15,6 +15,11 @@ interface Identity {
     division?: string
   }
   state: 'active' | 'inactive'
+  verifiable_addresses?: Array<{
+    status: string
+    verified: boolean
+    value: string
+  }>
   created_at: string
   updated_at: string
 }
@@ -22,7 +27,19 @@ interface Identity {
 export default function AdminUsersPage() {
   const { data: identities, error, mutate } = useSWR<Identity[]>('/admin-api/identities', fetcher)
   const [selectedUser, setSelectedUser] = useState<Identity | null>(null)
+  const [isEditing, setIsEditing] = useState(false)
+  const [editTraits, setEditTraits] = useState<any>({})
   const [loading, setLoading] = useState<string | null>(null)
+  const [recoveryData, setRecoveryData] = useState<any>(null)
+
+  // Initialize edit form when selected user changes
+  useEffect(() => {
+    if (selectedUser) {
+      setEditTraits({ ...selectedUser.traits })
+      setRecoveryData(null)
+      setIsEditing(false)
+    }
+  }, [selectedUser])
 
   const handleDelete = async (id: string) => {
     if (!confirm('Are you sure you want to delete this user? This cannot be undone.')) return
@@ -46,12 +63,57 @@ export default function AdminUsersPage() {
     try {
       await axios.put(`/admin-api/identities/${user.id}/state`, { state: newState }, { withCredentials: true })
       mutate()
-      // Update selected user if open
       if (selectedUser?.id === user.id) {
         setSelectedUser({ ...user, state: newState })
       }
     } catch (err) {
       alert('Failed to update user state')
+    } finally {
+      setLoading(null)
+    }
+  }
+
+  const handleUpdateTraits = async () => {
+    if (!selectedUser) return
+    setLoading(selectedUser.id)
+    try {
+      await axios.patch(`/admin-api/identities/${selectedUser.id}/traits`, editTraits, { withCredentials: true })
+      mutate()
+      setSelectedUser({ ...selectedUser, traits: editTraits })
+      setIsEditing(false)
+      alert('User traits updated successfully')
+    } catch (err) {
+      alert('Failed to update traits')
+    } finally {
+      setLoading(null)
+    }
+  }
+
+  const generateRecovery = async () => {
+    if (!selectedUser) return
+    setLoading(selectedUser.id)
+    try {
+      const res = await axios.post(`/admin-api/identities/${selectedUser.id}/recovery`, {}, { withCredentials: true })
+      setRecoveryData(res.data)
+    } catch (err) {
+      alert('Failed to generate recovery link')
+    } finally {
+      setLoading(null)
+    }
+  }
+
+  const verifyEmail = async () => {
+    if (!selectedUser) return
+    setLoading(selectedUser.id)
+    try {
+      await axios.post(`/admin-api/identities/${selectedUser.id}/verify`, {}, { withCredentials: true })
+      alert('Email verified successfully')
+      mutate()
+      // Refresh selected user
+      const updated = await fetcher(`/admin-api/identities/${selectedUser.id}`)
+      setSelectedUser(updated)
+    } catch (err) {
+      alert('Failed to verify email')
     } finally {
       setLoading(null)
     }
@@ -80,12 +142,14 @@ export default function AdminUsersPage() {
   
   if (!identities) return <div className="p-8 text-center">Loading identities from Kratos...</div>
 
+  const isEmailVerified = selectedUser?.verifiable_addresses?.[0]?.status === 'completed' || selectedUser?.verifiable_addresses?.[0]?.verified
+
   return (
     <div className="p-8 max-w-6xl mx-auto">
       <header className="flex justify-between items-start mb-8">
         <div>
           <h1 className="text-3xl font-bold text-slate-900">Identity Management</h1>
-          <p className="text-slate-500 mt-1">Lifecycle, States, and Session Control (Zero Trust)</p>
+          <p className="text-slate-500 mt-1">Lifecycle, Traits, and Security Control (Zero Trust)</p>
         </div>
         <div className="flex gap-4">
            <a href="/" className="px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition-colors">
@@ -126,7 +190,6 @@ export default function AdminUsersPage() {
                     </td>
                     <td className="p-4 text-right">
                       <button 
-                        onClick={(e) => { e.stopPropagation(); setSelectedUser(user); }}
                         className="text-blue-600 text-sm font-semibold hover:underline"
                       >
                         Details
@@ -142,36 +205,86 @@ export default function AdminUsersPage() {
         {/* User Details Sidebar */}
         <div className="lg:col-span-1">
           {selectedUser ? (
-            <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-6 sticky top-8">
-              <h2 className="text-xl font-bold text-slate-900 mb-6">User Details</h2>
-              
-              <div className="space-y-4 mb-8">
-                <div>
-                  <label className="block text-xs font-bold text-slate-400 uppercase">Email Address</label>
-                  <div className="text-slate-900 font-medium">{selectedUser.traits.email}</div>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-400 uppercase">First Name</label>
-                    <div className="text-slate-900">{selectedUser.traits.first_name || '-'}</div>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-slate-400 uppercase">Last Name</label>
-                    <div className="text-slate-900">{selectedUser.traits.last_name || '-'}</div>
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-400 uppercase">Division</label>
-                  <div className="text-slate-900">{selectedUser.traits.division || '-'}</div>
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-400 uppercase">Identity ID</label>
-                  <div className="text-xs font-mono text-slate-500 break-all">{selectedUser.id}</div>
-                </div>
+            <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-6 sticky top-8 max-h-[calc(100vh-4rem)] overflow-y-auto">
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-xl font-bold text-slate-900">User Profile</h2>
+                <button 
+                  onClick={() => setIsEditing(!isEditing)}
+                  className="text-sm text-blue-600 font-semibold"
+                >
+                  {isEditing ? 'Cancel' : 'Edit Traits'}
+                </button>
               </div>
+              
+              {isEditing ? (
+                <div className="space-y-4 mb-8">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-400 uppercase mb-1">First Name</label>
+                    <input 
+                      type="text" 
+                      value={editTraits.first_name || ''} 
+                      onChange={e => setEditTraits({...editTraits, first_name: e.target.value})}
+                      className="w-full border border-slate-200 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Last Name</label>
+                    <input 
+                      type="text" 
+                      value={editTraits.last_name || ''} 
+                      onChange={e => setEditTraits({...editTraits, last_name: e.target.value})}
+                      className="w-full border border-slate-200 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Division</label>
+                    <input 
+                      type="text" 
+                      value={editTraits.division || ''} 
+                      onChange={e => setEditTraits({...editTraits, division: e.target.value})}
+                      className="w-full border border-slate-200 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <button 
+                    onClick={handleUpdateTraits}
+                    disabled={loading === selectedUser.id}
+                    className="w-full bg-blue-600 text-white py-2 rounded-lg font-bold text-sm hover:bg-blue-700 transition-colors"
+                  >
+                    Save Changes
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-4 mb-8">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-400 uppercase">Email Address</label>
+                    <div className="flex items-center gap-2">
+                      <span className="text-slate-900 font-medium">{selectedUser.traits.email}</span>
+                      {isEmailVerified ? (
+                        <span className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-bold">VERIFIED</span>
+                      ) : (
+                        <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-bold">UNVERIFIED</span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-400 uppercase">First Name</label>
+                      <div className="text-slate-900">{selectedUser.traits.first_name || '-'}</div>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-400 uppercase">Last Name</label>
+                      <div className="text-slate-900">{selectedUser.traits.last_name || '-'}</div>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-400 uppercase">Division</label>
+                    <div className="text-slate-900">{selectedUser.traits.division || '-'}</div>
+                  </div>
+                </div>
+              )}
 
               <div className="space-y-3 pt-6 border-t border-slate-100">
-                <h3 className="text-sm font-bold text-slate-900 mb-2">Administrative Actions</h3>
+                <h3 className="text-sm font-bold text-slate-900 mb-2">Security & Lifecycle</h3>
                 
                 <button 
                   onClick={() => toggleState(selectedUser)}
@@ -184,6 +297,31 @@ export default function AdminUsersPage() {
                 >
                   {selectedUser.state === 'active' ? 'Deactivate Account' : 'Reactivate Account'}
                 </button>
+
+                {!isEmailVerified && (
+                  <button 
+                    onClick={verifyEmail}
+                    disabled={loading === selectedUser.id}
+                    className="w-full py-2 bg-blue-50 text-blue-700 rounded-lg font-semibold text-sm hover:bg-blue-100 transition-colors"
+                  >
+                    Mark Email as Verified
+                  </button>
+                )}
+
+                <button 
+                  onClick={generateRecovery}
+                  disabled={loading === selectedUser.id}
+                  className="w-full py-2 bg-indigo-50 text-indigo-700 rounded-lg font-semibold text-sm hover:bg-indigo-100 transition-colors"
+                >
+                  Generate Recovery Link
+                </button>
+
+                {recoveryData && (
+                  <div className="p-3 bg-indigo-900 text-white rounded-lg text-[10px] break-all font-mono">
+                    <p className="mb-2 text-indigo-300 font-bold uppercase tracking-widest">Recovery URL (Secret):</p>
+                    {recoveryData.recovery_link}
+                  </div>
+                )}
 
                 <button 
                   onClick={() => revokeSessions(selectedUser.id)}
@@ -204,7 +342,7 @@ export default function AdminUsersPage() {
             </div>
           ) : (
             <div className="bg-slate-50 border border-dashed border-slate-200 rounded-xl p-12 text-center text-slate-400 italic text-sm">
-              Select a user to view details and manage their account lifecycle.
+              Select a user to manage their profile and account lifecycle.
             </div>
           )}
         </div>
