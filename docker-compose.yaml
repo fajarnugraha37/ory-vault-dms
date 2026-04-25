@@ -36,7 +36,7 @@ services:
         condition: service_completed_successfully
     ports:
       - "4433:4433" # public (HTTPS)
-      - "4434:4434" # admin (HTTP - tetap internal)
+      # Port 4434 (Admin) dihapus dari exposure host untuk Zero Trust
     environment:
       - DSN=postgres://ory:vault-pass@vault-db:5432/ory_vault?sslmode=disable&search_path=kratos
       - SERVE_PUBLIC_TLS_CERT_PATH=/etc/config/kratos/certs/kratos.crt

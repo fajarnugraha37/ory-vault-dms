@@ -51,3 +51,13 @@ Mencapai postur Zero Trust dengan mengaktifkan HTTPS pada Gateway (Nginx) dan me
 - **Root Cause**: Menaruh `trusted_proxies` di bawah `serve.public` menyebabkan crash karena pelanggaran skema YAML.
 - **Resolution**: Memindahkan konfigurasi ke Environment Variable `SERVE_TRUSTED_PROXIES`.
 - **Lesson Learned**: Environment variables lebih tangguh terhadap perubahan skema YAML minor di stack Ory.
+
+### Issue 5: Oathkeeper 404 Rule Mismatch (Scheme Mismatch)
+- **Root Cause**: Oathkeeper menerima traffic HTTP dari Nginx tetapi rule menggunakan `https://`, menyebabkan 404 karena skema tidak cocok.
+- **Resolution**: Aktifkan `serve.proxy.trust_forwarded_headers: true` di `oathkeeper.yaml`.
+- **Lesson Learned**: Saat di belakang reverse proxy SSL, Oathkeeper wajib dikonfigurasi untuk mempercayai header `X-Forwarded-*`.
+
+### Issue 6: Kratos 500 Error pada Registrasi (Timeout)
+- **Root Cause**: Password validator `haveibeenpwned` mencoba memanggil API eksternal dan mengalami timeout.
+- **Resolution**: Menonaktifkan `haveibeenpwned_enabled` di `kratos.yaml`.
+- **Lesson Learned**: Matikan pengecekan eksternal yang memblokir flow di environment lab/dev.

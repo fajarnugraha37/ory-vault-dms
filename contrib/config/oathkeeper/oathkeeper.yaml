@@ -1,6 +1,7 @@
 serve:
   proxy:
     port: 4455
+    trust_forwarded_headers: true
     cors:
       enabled: true
       allowed_origins:

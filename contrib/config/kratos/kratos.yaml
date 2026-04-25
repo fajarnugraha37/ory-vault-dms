@@ -6,6 +6,8 @@ selfservice:
   methods:
     password:
       enabled: true
+      config:
+        haveibeenpwned_enabled: false
   flows:
     error:
       ui_url: https://ory-vault.test/auth/error
