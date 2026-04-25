@@ -32,13 +32,19 @@ services:
     depends_on:
       vault-db:
         condition: service_healthy
+      vault-kratos-certs:
+        condition: service_completed_successfully
     ports:
-      - "4433:4433" # public
-      - "4434:4434" # admin
+      - "4433:4433" # public (HTTPS)
+      - "4434:4434" # admin (HTTP - tetap internal)
     environment:
       - DSN=postgres://ory:vault-pass@vault-db:5432/ory_vault?sslmode=disable&search_path=kratos
+      - SERVE_PUBLIC_TLS_CERT_PATH=/etc/config/kratos/certs/kratos.crt
+      - SERVE_PUBLIC_TLS_KEY_PATH=/etc/config/kratos/certs/kratos.key
+      - SERVE_TRUSTED_PROXIES=172.16.0.0/12,10.0.0.0/8,127.0.0.1/32
     volumes:
       - ./contrib/config/kratos:/etc/config/kratos
+      - internal-certs:/etc/config/kratos/certs:ro
     command: serve -c /etc/config/kratos/kratos.yaml --dev
     networks:
       - ory-network
@@ -88,11 +94,14 @@ services:
     depends_on:
       vault-kratos:
         condition: service_healthy
+    environment:
+      - SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
     ports:
       - "4455:4455" # proxy
       - "4456:4456" # api
     volumes:
       - ./contrib/config/oathkeeper:/etc/config/oathkeeper
+      - ./contrib/config/oathkeeper/root_ca.crt:/etc/ssl/certs/ca-certificates.crt:ro
     command: serve -c /etc/config/oathkeeper/oathkeeper.yaml
     networks:
       - ory-network
@@ -150,6 +159,7 @@ services:
       - "80:80"
     volumes:
       - ./contrib/nginx/default.conf:/etc/nginx/conf.d/default.conf
+      - ./step-ca-data/certs/root_ca.crt:/etc/nginx/certs/internal_root_ca.crt:ro
     networks:
       - ory-network
     healthcheck:
@@ -224,6 +234,44 @@ services:
         limits:
           memory: 128M
 
+  vault-ca:
+    image: smallstep/step-ca:latest
+    container_name: vault-ca
+    restart: unless-stopped
+    environment:
+      - DOCKER_STEPCA_INIT_NAME=OryVaultCA
+      - DOCKER_STEPCA_INIT_PROVISIONER_NAME=admin
+      - DOCKER_STEPCA_INIT_PASSWORD=vault-ca-secret-password-123
+      - DOCKER_STEPCA_INIT_DNS_NAMES=vault-ca,localhost
+    volumes:
+      - ./step-ca-data:/home/step
+    networks:
+      - ory-network
+    healthcheck:
+      test: ["CMD", "step", "ca", "health", "--ca-url", "https://localhost:9000", "--root", "/home/step/certs/root_ca.crt"]
+      interval: 5s
+      timeout: 5s
+      retries: 3
+
+  vault-kratos-certs:
+    image: smallstep/step-cli
+    container_name: vault-kratos-certs
+    user: root
+    depends_on:
+      vault-ca:
+        condition: service_healthy
+    networks:
+      - ory-network
+    volumes:
+      - internal-certs:/certs
+      - ./step-ca-data:/home/step:ro
+    environment:
+      - PW=vault-ca-secret-password-123
+    command: sh -c "echo $$PW > /tmp/pw && step ca certificate vault-kratos /certs/kratos.crt /certs/kratos.key --ca-url https://vault-ca:9000 --root /home/step/certs/root_ca.crt --provisioner-password-file /tmp/pw --password-file /tmp/pw --force && chmod 644 /certs/kratos.crt /certs/kratos.key"
+
 networks:
   ory-network:
     driver: bridge
+
+volumes:
+  internal-certs: {}

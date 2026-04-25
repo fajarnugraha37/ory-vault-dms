@@ -168,3 +168,5 @@ desktop.ini
 # Docker
 .docker
 pgdata
+step-ca-data
+*.bak

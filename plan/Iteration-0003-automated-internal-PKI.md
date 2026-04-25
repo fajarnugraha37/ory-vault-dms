@@ -10,18 +10,24 @@ Membangun otoritas sertifikat internal (**Step-CA**) untuk mengamankan jalur kom
 
 *Instruksi untuk AI Pelaksana: Pastikan kondisi berikut terpenuhi sebelum memodifikasi file.*
 
-- [ ] **Check Docker Network**: Pastikan nama network adalah `ory-network`. Jalankan `docker network ls`.
-- [ ] **Locate Config Folders**: Pastikan direktori `./contrib/config/kratos` dan `./contrib/config/oathkeeper` dapat diakses secara *writeable*.
-- [ ] **Verify Compose Version**: Pastikan versi docker compose mendukung `depends_on.condition: service_healthy`.
-- [ ] **Backup**: Salin `docker-compose.yaml` saat ini menjadi `docker-compose.yaml.bak`.
+- [x] **Check Docker Network**: Pastikan nama network adalah `ory-network`. Jalankan `docker network ls`.
+- [x] **Locate Config Folders**: Pastikan direktori `./contrib/config/kratos` dan `./contrib/config/oathkeeper` dapat diakses secara *writeable*.
+- [x] **Verify Compose Version**: Pastikan versi docker compose mendukung `depends_on.condition: service_healthy`.
+- [x] **Backup**: Salin `docker-compose.yaml` saat ini menjadi `docker-compose.yaml.bak`.
 
 ---
 
 ## 2. Proposed Tasks
 
-### Phase A: Deployment Otoritas Sertifikat (Step-CA)
+### Phase A: Deployment Otoritas Sertifikat (Step-CA) [DONE]
+**Status**: `vault-ca` operasional.
+**Fingerprint**: `15065e7e06e0ab4e8f63998c55f28a05f7695c1bcd9a9d8ad3800f85813d83b2`
 
-**Goal**: Menjalankan server CA internal yang akan menerbitkan sertifikat.
+### Phase B: Automated Certificate Sidecar [DONE]
+**Status**: `vault-kratos-certs` berhasil men-generate dan me-rotasi sertifikat secara otomatis.
+
+### Phase C: Service Hardening (Kratos & Oathkeeper) [DONE]
+**Status**: Kratos menjalankan HTTPS pada port 4433, Oathkeeper mempercayai Root CA internal.
 
 1. **Initialize Step-CA Service**: Tambahkan service `vault-ca` di `docker-compose.yaml`.
 
@@ -125,6 +131,36 @@ Membangun otoritas sertifikat internal (**Step-CA**) untuk mengamankan jalur kom
 
 - **Circular Dependency**: Sidecar butuh CA aktif. Jika CA gagal start, seluruh stack akan stuck di `waiting for healthy`.
 - **Trust Store**: Setiap container yang memanggil HTTPS internal **WAJIB** memiliki file `root_ca.crt` di dalam trust store OS-nya (atau flag `--cacert` di curl). Jika lupa di-mount, akan muncul error "Certificate Signed by Unknown Authority".
-- **Clock Synchronization**: TLS sangat sensitif terhadap waktu. Pastikan container tidak memiliki *time drift* lebih dari 1 menit.
+---
 
-> **Instruction for AI Agent**: Jika anda menemukan error `Unauthorized: Missing identity token` setelah migrasi ini, cek apakah `oathkeeper.yaml` sudah diubah URL-nya menjadi `https://`. Jika koneksi gagal total, cek apakah port internal Kratos tetap `4433` (default Kratos TLS).
+## 6. Retrospective & Issue Log (Post-Implementation)
+
+### Issue 1: Step-CA Initialization Failure
+- **Root Cause**: Container `vault-ca` gagal start karena variabel lingkungan `DOCKER_STEPCA_INIT_DNS_NAMES` tidak disertakan. Tanpa ini, inisialisasi otomatis `ca.json` gagal.
+- **Resolution**: Menambahkan `DOCKER_STEPCA_INIT_DNS_NAMES=vault-ca,localhost` ke `docker-compose.yaml`.
+- **Lesson Learned**: Dokumentasi Docker `smallstep/step-ca` mewajibkan DNS names untuk inisialisasi *headless*.
+
+### Issue 2: Sidecar Argument Error (`too many positional arguments`)
+- **Root Cause**: `step ca certificate` membutuhkan argumen yang sangat spesifik. Kesalahan terjadi karena absennya flag `--password-file` (untuk enkripsi private key) saat dijalankan secara otomatis, yang memicu prompt interaktif di lingkungan non-TTY.
+- **Resolution**: Menyediakan dua file password: `--provisioner-password-file` dan `--password-file` menggunakan file sementara `/tmp/pw`.
+- **Lesson Learned**: Untuk otomatisasi `step-cli`, enkripsi private key *wajib* ditangani secara non-interaktif atau menggunakan flag `--no-password` (jika didukung versi tersebut) atau menyalurkan password via file.
+
+### Issue 3: Permission Denied pada Volume Sertifikat
+- **Root Cause**: Sidecar berjalan sebagai `root`, sehingga file `.crt` dan `.key` dimiliki oleh root. Service Ory (Kratos/Oathkeeper) berjalan sebagai user `ory` (UID 100/1000) dan tidak bisa membaca file tersebut.
+- **Resolution**: Menambahkan `chmod 644` pada perintah sidecar setelah sertifikat diterbitkan dan memberikan izin baca di level host Windows menggunakan `icacls`.
+- **Lesson Learned**: Selalu pertimbangkan pemetaan UID/GID saat berbagi volume antara container root dan non-root di Docker.
+
+### Issue 4: Oathkeeper TLS Verification Failure (`unknown authority`)
+- **Root Cause**: Image Ory Oathkeeper (minimal/distroless) tidak memuat CA tambahan secara otomatis dari folder mount. Go runtime membutuhkan Root CA berada di bundle sistem.
+- **Resolution**: Me-mount Root CA internal langsung menimpa file default CA bundle di `/etc/ssl/certs/ca-certificates.crt` dan mengatur variabel `SSL_CERT_FILE`.
+- **Lesson Learned**: Pada container distroless, injeksi sertifikat paling aman adalah dengan menimpa bundle standar OS.
+
+### Issue 5: Kratos Invalid Configuration (`trusted_proxies`)
+- **Root Cause**: Skema YAML Kratos v1.1 menolak `trusted_proxies` jika diletakkan di bawah `serve.public` atau di level root (tergantung strict validation).
+- **Resolution**: Memindahkan konfigurasi ke variabel lingkungan `SERVE_TRUSTED_PROXIES` di `docker-compose.yaml` untuk menghindari masalah parsing skema YAML.
+- **Lesson Learned**: Gunakan Environment Variables untuk properti yang sering berubah atau memiliki validasi skema YAML yang ketat antar versi.
+
+---
+
+## 7. Strategic Pivot: Iteration 0005 Acceleration
+Mengingat ketidakstabilan protokol (campuran HTTP dan HTTPS) menyebabkan masalah CSRF dan sinkronisasi session, tim memutuskan untuk mempercepat **Iterasi 0005 (Full Nginx HTTPS)** sebelum melanjutkan ke fitur admin. Zero Trust sejati membutuhkan enkripsi dari sisi client (browser).

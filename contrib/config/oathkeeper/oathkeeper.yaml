@@ -41,7 +41,7 @@ authenticators:
   cookie_session:
     enabled: true
     config:
-      check_session_url: http://vault-kratos:4433/sessions/whoami
+      check_session_url: https://vault-kratos:4433/sessions/whoami
       preserve_path: true
       preserve_query: true
       subject_from: identity.id
