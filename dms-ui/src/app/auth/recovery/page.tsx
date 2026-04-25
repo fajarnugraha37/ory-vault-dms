@@ -22,7 +22,10 @@ function RecoveryForm() {
     }
 
     ory.getRecoveryFlow({ id: flowId })
-      .then(({ data }) => setFlow(data))
+      .then(({ data }) => {
+        console.log("RECOVERY_FLOW_DEBUG:", data);
+        setFlow(data);
+      })
       .catch(handleError);
   }, [flowId]);
 

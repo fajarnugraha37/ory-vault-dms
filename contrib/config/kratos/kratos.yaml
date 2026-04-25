@@ -77,7 +77,7 @@ identity:
 
 serve:
   public:
-    base_url: https://auth.ory-vault.test/
+    base_url: https://auth.ory-vault.test
     cors:
       enabled: true
       allowed_origins:
