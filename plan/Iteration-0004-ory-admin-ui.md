@@ -67,7 +67,7 @@ Pendekatan ini memastikan semua tindakan admin melewati Oathkeeper (JWT), divali
 ## 4. Validation Strategy (Ujian Pengesahan)
 
 1. **Unauthorized Edge Access**:
-   - Panggil `curl -I http://api.ory-vault.test/api/admin/identities` tanpa cookie/JWT.
+   - Panggil `curl -I https://api.ory-vault.test/api/admin/identities` tanpa cookie/JWT.
    - **Hasil**: Wajib `401 Unauthorized` dari Oathkeeper.
 2. **Backend Audit Log**:
    - Lakukan penghapusan *user* fiktif melalui halaman Next.js.

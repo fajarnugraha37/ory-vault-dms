@@ -6,7 +6,7 @@ serve:
 
 urls:
   self:
-    issuer: http://auth.ory-vault.test/
+    issuer: https://auth.ory-vault.test/
   consent: http://ory-vault.test/consent
   login: http://ory-vault.test/login
   logout: http://ory-vault.test/logout

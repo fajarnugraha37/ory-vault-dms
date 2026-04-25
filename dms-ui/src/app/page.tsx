@@ -83,7 +83,7 @@ export default function Dashboard() {
             <div className="space-y-4">
               <button
                 onClick={() => {
-                  fetch("http://api.ory-vault.test/health", {
+                  fetch("https://api.ory-vault.test/health", {
                     credentials: "include",
                   })
                     .then((res) => res.text())
@@ -96,7 +96,7 @@ export default function Dashboard() {
               </button>
               <button
                 onClick={() => {
-                  fetch("http://api.ory-vault.test/api/me", {
+                  fetch("https://api.ory-vault.test/api/me", {
                     credentials: "include",
                   })
                     .then((res) => {

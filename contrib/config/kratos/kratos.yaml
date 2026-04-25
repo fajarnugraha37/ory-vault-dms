@@ -1,34 +1,34 @@
 selfservice:
-  default_browser_return_url: http://ory-vault.test/
+  default_browser_return_url: https://ory-vault.test/
   allowed_return_urls:
-    - http://ory-vault.test/
-    - http://api.ory-vault.test/
+    - https://ory-vault.test/
+    - https://api.ory-vault.test/
   methods:
     password:
       enabled: true
   flows:
     error:
-      ui_url: http://ory-vault.test/auth/error
+      ui_url: https://ory-vault.test/auth/error
     settings:
-      ui_url: http://ory-vault.test/auth/settings
+      ui_url: https://ory-vault.test/auth/settings
       privileged_session_max_age: 15m
     recovery:
       enabled: true
-      ui_url: http://ory-vault.test/auth/recovery
+      ui_url: https://ory-vault.test/auth/recovery
     verification:
       enabled: true
-      ui_url: http://ory-vault.test/auth/verification
+      ui_url: https://ory-vault.test/auth/verification
       after:
-        default_browser_return_url: http://ory-vault.test/
+        default_browser_return_url: https://ory-vault.test/
     logout:
       after:
-        default_browser_return_url: http://ory-vault.test/auth/login
+        default_browser_return_url: https://ory-vault.test/auth/login
     login:
-      ui_url: http://ory-vault.test/auth/login
+      ui_url: https://ory-vault.test/auth/login
       lifespan: 10m
     registration:
       lifespan: 10m
-      ui_url: http://ory-vault.test/auth/registration
+      ui_url: https://ory-vault.test/auth/registration
       after:
         password:
           hooks:
@@ -70,13 +70,13 @@ identity:
 
 serve:
   public:
-    base_url: http://auth.ory-vault.test/
+    base_url: https://auth.ory-vault.test/
     cors:
       enabled: true
       allowed_origins:
-        - http://ory-vault.test
-        - http://app.ory-vault.test
-        - http://api.ory-vault.test
+        - https://ory-vault.test
+        - https://app.ory-vault.test
+        - https://api.ory-vault.test
       allowed_methods:
         - POST
         - GET

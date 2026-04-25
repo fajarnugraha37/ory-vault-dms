@@ -2,7 +2,7 @@
 
 ## 1. layer model
 
-- **Ingress Layer**: Nginx (Port 80) sebagai traffic splitter berdasarkan domain.
+- **Ingress Layer**: Nginx (Port 443 HTTPS) sebagai traffic splitter berdasarkan domain.
 - **Security Layer (Edge)**: Ory Oathkeeper (Port 4455). Bertindak sebagai Identity-Aware Proxy.
 - **Identity Layer**: Ory Kratos. Mengelola pendaftaran, login, dan MFA.
 - **Delegation Layer**: Ory Hydra. Mengelola token OAuth2 untuk pihak ketiga.
@@ -12,7 +12,7 @@
 ## 2. network topology
 
 - Network Name: `ory-network` (Docker bridge).
-- DNS Resolution: Menggunakan service name (contoh: `http://kratos:4433`).
+- DNS Resolution: Menggunakan service name (contoh: `https://kratos:4433`).
 - Port Mapping:
   - 4433/4434 -> Kratos (Identity)
   - 4444/4445 -> Hydra (OAuth2)
@@ -24,6 +24,7 @@
 1. User meminta data ke `api.ory-vault.test`.
 2. Nginx meneruskan ke Oathkeeper.
 3. Oathkeeper bertanya ke Kratos: "Apakah cookie ini punya session?"
-4. Jika ya, Oathkeeper menyuntikkan Signed JWT (ID Token) dan meneruskan ke Go Backend.
-5. Go Backend bertanya ke Keto via gRPC: "Apakah subjek dari JWT ini boleh baca Dokumen A?"
+4. Jika ya, Oathkeeper mentransformasi session menjadi **Signed RS256 JWT (ID Token)** dan meneruskan ke Go Backend.
+5. Go Backend memvalidasi signature JWT secara kriptografis (Zero Trust) dan mengekstrak subjek identitas.
+6. Go Backend bertanya ke Keto via gRPC: "Apakah subjek dari JWT ini boleh baca Dokumen A?"
  A?"

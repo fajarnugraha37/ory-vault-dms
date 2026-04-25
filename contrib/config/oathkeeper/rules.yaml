@@ -3,7 +3,7 @@
     preserve_host: true
     url: "http://vault-backend:8080"
   match:
-    url: "http://<**>.ory-vault.test/health"
+    url: "https://<**>.ory-vault.test/health"
     methods: ["GET"]
   authenticators:
     - handler: noop
@@ -19,13 +19,13 @@
     preserve_host: true
     url: "http://vault-backend:8080"
   match:
-    url: "http://<**>.ory-vault.test/api/<**>"
+    url: "https://<**>.ory-vault.test/api/<**>"
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH"]
   authenticators:
     - handler: cookie_session
   authorizer:
     handler: allow
   mutators:
-    - handler: header
+    - handler: id_token
   errors:
     - handler: json

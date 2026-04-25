@@ -4,8 +4,8 @@ serve:
     cors:
       enabled: true
       allowed_origins:
-        - http://ory-vault.test
-        - http://app.ory-vault.test
+        - https://ory-vault.test
+        - https://app.ory-vault.test
       allowed_methods:
         - POST
         - GET
@@ -64,6 +64,15 @@ authorizers:
 mutators:
   noop:
     enabled: true
+  id_token:
+    enabled: true
+    config:
+      issuer_url: https://api.ory-vault.test/
+      jwks_url: file:///etc/config/oathkeeper/jwks.json
+      claims: |
+        {
+          "session": {{ .Extra | toJson }}
+        }
   header:
     enabled: true
     config:

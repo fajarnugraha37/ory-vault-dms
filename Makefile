@@ -56,4 +56,8 @@ ps:
 check:
 	docker-compose ps
 	ping -c 1 auth.ory-vault.test
-	curl -I http://api.ory-vault.test/health
+	curl -k -I https://api.ory-vault.test/health
+
+trust-ca:
+	@echo "Installing Root CA to Windows CurrentUser store..."
+	@powershell -Command "Import-Certificate -FilePath '.\step-ca-data\certs\root_ca.crt' -CertStoreLocation Cert:\CurrentUser\Root"

@@ -23,10 +23,10 @@ Implement the Identity & Access Control layer using Ory Kratos for authenticatio
 ## Validation Strategy
 
 - **Schema Validation**: Kratos container starts without errors with the new schema.
-- **Unauthenticated Test**: Accessing `http://api.ory-vault.test/api/me` without a cookie returns `401 Unauthorized` directly from Oathkeeper.
+- **Unauthenticated Test**: Accessing `https://api.ory-vault.test/api/me` without a cookie returns `401 Unauthorized` directly from Oathkeeper.
 - **Registration Flow**: A user can register via the Next.js UI, creating an identity in the `kratos` schema.
 - **Login Flow**: Logging in on the UI sets a shared session cookie for `.ory-vault.test`.
-- **Authenticated Test**: Accessing `http://api.ory-vault.test/api/me` with the session cookie returns HTTP 200 and the correct `X-User-Id`.
+- **Authenticated Test**: Accessing `https://api.ory-vault.test/api/me` with the session cookie returns HTTP 200 and the correct `X-User-Id`.
 
 ## status
 

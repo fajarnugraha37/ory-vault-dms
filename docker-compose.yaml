@@ -95,16 +95,17 @@ services:
       vault-kratos:
         condition: service_healthy
     environment:
-      - SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+      - SSL_CERT_FILE=/etc/config/oathkeeper/root_ca.crt
     ports:
       - "4455:4455" # proxy
       - "4456:4456" # api
     volumes:
       - ./contrib/config/oathkeeper:/etc/config/oathkeeper
-      - ./contrib/config/oathkeeper/root_ca.crt:/etc/ssl/certs/ca-certificates.crt:ro
+      - ./contrib/config/oathkeeper/root_ca.crt:/etc/config/oathkeeper/root_ca.crt:ro
     command: serve -c /etc/config/oathkeeper/oathkeeper.yaml
     networks:
       - ory-network
+
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:4456/health/ready || exit 1"]
       interval: 10s
@@ -157,11 +158,42 @@ services:
         condition: service_healthy
     ports:
       - "80:80"
+      - "443:443"
     volumes:
       - ./contrib/nginx/default.conf:/etc/nginx/conf.d/default.conf
       - ./step-ca-data/certs/root_ca.crt:/etc/nginx/certs/internal_root_ca.crt:ro
+      - internal-certs:/etc/nginx/certs/internal:ro
     networks:
       - ory-network
+
+  vault-gateway-certs:
+    image: smallstep/step-cli
+    container_name: vault-gateway-certs
+    user: root
+    depends_on:
+      vault-ca:
+        condition: service_healthy
+    networks:
+      - ory-network
+    volumes:
+      - internal-certs:/certs
+      - ./step-ca-data:/home/step:ro
+    environment:
+      - PW=vault-ca-secret-password-123
+    command: >
+      sh -c "echo $$PW > /tmp/pw && 
+      step ca certificate \"OryVault Gateway\" /certs/gateway.crt /certs/gateway.key 
+      --san ory-vault.test 
+      --san auth.ory-vault.test 
+      --san api.ory-vault.test 
+      --san app.ory-vault.test 
+      --san mail.ory-vault.test 
+      --ca-url https://vault-ca:9000 
+      --root /home/step/certs/root_ca.crt 
+      --provisioner-password-file /tmp/pw 
+      --password-file /tmp/pw 
+      --force && 
+      chmod 644 /certs/gateway.crt /certs/gateway.key"
     healthcheck:
       test: ["CMD-SHELL", "nginx -t || exit 1"]
       interval: 10s
@@ -183,6 +215,8 @@ services:
         condition: service_healthy
       vault-keto:
         condition: service_healthy
+    environment:
+      - JWKS_URL=http://vault-oathkeeper:4456/.well-known/jwks.json
     networks:
       - ory-network
     healthcheck:
