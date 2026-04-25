@@ -21,39 +21,34 @@ Membangun kapabilitas manajemen identitas (Admin UI) yang 100% mematuhi prinsip 
 - [x] Delete Identity (DELETE `/admin-api/identities/{id}`)
 - [x] UI Tabel di Next.js (`/dashboard/admin/users`)
 
-### Fasa B: Account Lifecycle & State Management [IN PROGRESS]
-- [ ] **State Toggle**: Update identity state (`active` <-> `inactive`) via `PATCH`.
-- [ ] **Manual Recovery**: Trigger password reset email atau generate recovery link bagi admin.
-- [ ] **Impersonation**: Generate login session khusus untuk bantuan teknis (securely).
+### Fasa B: Account Lifecycle & State Management [DONE]
+- [x] **State Toggle**: Update identity state (`active` <-> `inactive`) via `PUT`.
+- [x] **Session Revocation**: Fitur "Logout dari semua perangkat" untuk user tertentu (DELETE `/admin-api/identities/{id}/sessions`).
+- [x] **Identity Detail View**: Sidebar detail untuk melihat `traits` dan status user.
 
-### Fasa C: Identity Details & Trait Editor [TODO]
-- [ ] **Identity Detail View**: Halaman/Modal detail untuk melihat `traits`, `metadata`, dan audit log per user.
+### Fasa C: Identity Details Extension & Trait Editor [IN PROGRESS]
+- [ ] **Manual Recovery**: Trigger password reset email atau generate recovery link bagi admin.
 - [ ] **Trait Editor**: Form untuk mengubah nama, divisi, atau metadata user dari Admin UI.
 - [ ] **Manual Verification**: Tombol untuk menandai email user sebagai "Verified" secara manual.
 
-### Fasa D: Security Audit & Session Management [TODO]
-- [ ] **Active Sessions**: Melihat daftar device/browser yang sedang login untuk identitas tertentu.
-- [ ] **Session Revocation**: Fitur "Logout dari semua perangkat" (Revoke all sessions) untuk user tertentu.
-- [ ] **Security Posture Audit**: Tampilkan status 2FA (TOTP/WebAuthn) dan riwayat login terakhir di UI detail.
-
-### Fasa E: Compliance & Bulk Operations [TODO]
-- [ ] **Audit Timeline**: Tampilkan daftar tindakan admin (siapa mengubah apa) berdasarkan log backend.
-- [ ] **Bulk Actions**: Fitur import/export user via CSV (Internal Lab Purpose).
+### Fasa D: Security Audit & Future RBAC [TODO]
+- [ ] **Active Sessions List**: Melihat detail device/browser yang sedang login.
+- [ ] **Security Posture Audit**: Tampilkan status 2FA (TOTP/WebAuthn).
+- [ ] **Audit Timeline**: Tampilkan daftar tindakan admin (siapa mengubah apa).
 
 ---
 
 ## 3. Implementation Details (Backend Wrapper)
 
 Setiap fitur baru di atas akan diimplementasikan sebagai endpoint di `dms-backend` yang memanggil Kratos Admin API internal:
-- **State Change**: `PUT /admin/identities/{id}` (mengubah field `state`)
-- **Recovery**: `POST /admin/recovery/code` atau `POST /admin/recovery/link`
-- **Sessions**: `GET /admin/identities/{id}/sessions`
-- **Revoke**: `DELETE /admin/identities/{id}/sessions`
+- **State Change**: `PUT /admin/identities/{id}` (fetch full body first, then update state field) [DONE]
+- **Revoke**: `DELETE /admin/identities/{id}/sessions` [DONE]
+- **Sessions**: `GET /admin/identities/{id}/sessions` [DONE]
 
 ---
 
 ## 4. Validation Strategy [ONGOING]
 
 1. **Access Control**: Pastikan hanya user dengan email `@ory-vault.*` yang bisa memanggil endpoint `/admin-api/*`. [PASSED]
-2. **Audit Logging**: Setiap tindakan administratif (State change, Revoke, Edit) wajib mencatat log ke stdout. [ONGOING]
-3. **Zero Trust Integrity**: Pastikan backend memvalidasi JWT Signature sebelum melakukan request ke Kratos Admin port. [PASSED]
+2. **Audit Logging**: Setiap tindakan administratif (State change, Revoke, Edit) mencatat log ke stdout backend. [PASSED]
+3. **Zero Trust Integrity**: Backend memvalidasi JWT Signature sebelum melakukan request ke Kratos Admin port. [PASSED]

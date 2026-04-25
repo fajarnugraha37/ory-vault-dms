@@ -10,88 +10,208 @@ interface Identity {
   id: string
   traits: {
     email: string
+    first_name?: string
+    last_name?: string
+    division?: string
   }
-  state: string
+  state: 'active' | 'inactive'
+  created_at: string
+  updated_at: string
 }
 
 export default function AdminUsersPage() {
   const { data: identities, error, mutate } = useSWR<Identity[]>('/admin-api/identities', fetcher)
-  const [loadingId, setLoadingId] = useState<string | null>(null)
+  const [selectedUser, setSelectedUser] = useState<Identity | null>(null)
+  const [loading, setLoading] = useState<string | null>(null)
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this user?')) return
-    
-    setLoadingId(id)
+    if (!confirm('Are you sure you want to delete this user? This cannot be undone.')) return
+    setLoading(id)
     try {
       await axios.delete(`/admin-api/identities/${id}`, { withCredentials: true })
-      mutate() // Refresh list
+      mutate()
+      if (selectedUser?.id === id) setSelectedUser(null)
     } catch (err) {
       alert('Failed to delete user')
-      console.error(err)
     } finally {
-      setLoadingId(null)
+      setLoading(null)
+    }
+  }
+
+  const toggleState = async (user: Identity) => {
+    const newState = user.state === 'active' ? 'inactive' : 'active'
+    if (!confirm(`Are you sure you want to ${newState === 'inactive' ? 'deactivate' : 'reactivate'} this user?`)) return
+    
+    setLoading(user.id)
+    try {
+      await axios.put(`/admin-api/identities/${user.id}/state`, { state: newState }, { withCredentials: true })
+      mutate()
+      // Update selected user if open
+      if (selectedUser?.id === user.id) {
+        setSelectedUser({ ...user, state: newState })
+      }
+    } catch (err) {
+      alert('Failed to update user state')
+    } finally {
+      setLoading(null)
+    }
+  }
+
+  const revokeSessions = async (id: string) => {
+    if (!confirm('Are you sure you want to log out this user from all devices?')) return
+    setLoading(id)
+    try {
+      await axios.delete(`/admin-api/identities/${id}/sessions`, { withCredentials: true })
+      alert('All sessions revoked successfully')
+    } catch (err) {
+      alert('Failed to revoke sessions')
+    } finally {
+      setLoading(null)
     }
   }
 
   if (error) return (
-    <div className="p-8 text-red-500">
+    <div className="p-8 text-red-500 text-center">
       <h1 className="text-2xl font-bold mb-4">Access Denied</h1>
-      <p>Only users with @ory-vault.test or @ory-vault.admin emails can access this page.</p>
+      <p>Only authorized administrators can access this panel.</p>
       <a href="/" className="mt-4 inline-block text-blue-500 hover:underline">Return to Home</a>
     </div>
   )
   
-  if (!identities) return <div className="p-8">Loading identities...</div>
+  if (!identities) return <div className="p-8 text-center">Loading identities from Kratos...</div>
 
   return (
-    <div className="p-8">
-      <header className="flex justify-between items-center mb-8">
+    <div className="p-8 max-w-6xl mx-auto">
+      <header className="flex justify-between items-start mb-8">
         <div>
-          <h1 className="text-3xl font-bold">User Management</h1>
-          <p className="text-slate-500">Identity Admin Panel (Zero Trust Verified)</p>
+          <h1 className="text-3xl font-bold text-slate-900">Identity Management</h1>
+          <p className="text-slate-500 mt-1">Lifecycle, States, and Session Control (Zero Trust)</p>
         </div>
-        <a href="/" className="text-blue-500 hover:underline">Back to Dashboard</a>
+        <div className="flex gap-4">
+           <a href="/" className="px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition-colors">
+            Dashboard
+          </a>
+        </div>
       </header>
 
-      <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
-        <table className="w-full text-left border-collapse">
-          <thead className="bg-slate-50 border-b border-slate-200">
-            <tr>
-              <th className="p-4 font-semibold text-slate-700">Identity ID</th>
-              <th className="p-4 font-semibold text-slate-700">Email</th>
-              <th className="p-4 font-semibold text-slate-700">State</th>
-              <th className="p-4 font-semibold text-slate-700 text-right">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {identities.map((user) => (
-              <tr key={user.id} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
-                <td className="p-4 font-mono text-sm text-slate-600">{user.id}</td>
-                <td className="p-4 font-medium">{user.traits.email}</td>
-                <td className="p-4">
-                  <span className={`px-2 py-1 rounded-full text-xs font-bold ${
-                    user.state === 'active' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
-                  }`}>
-                    {user.state}
-                  </span>
-                </td>
-                <td className="p-4 text-right">
-                  <button 
-                    onClick={() => handleDelete(user.id)}
-                    disabled={loadingId === user.id}
-                    className="text-red-600 hover:bg-red-50 px-3 py-1 rounded-md transition-colors disabled:opacity-50"
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        {/* Users Table */}
+        <div className="lg:col-span-2">
+          <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+            <table className="w-full text-left border-collapse">
+              <thead className="bg-slate-50 border-b border-slate-200">
+                <tr>
+                  <th className="p-4 font-semibold text-slate-700 text-sm">Identity</th>
+                  <th className="p-4 font-semibold text-slate-700 text-sm">Status</th>
+                  <th className="p-4 font-semibold text-slate-700 text-sm text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {identities.map((user) => (
+                  <tr 
+                    key={user.id} 
+                    className={`border-b border-slate-100 hover:bg-slate-50 transition-colors cursor-pointer ${selectedUser?.id === user.id ? 'bg-blue-50' : ''}`}
+                    onClick={() => setSelectedUser(user)}
                   >
-                    {loadingId === user.id ? 'Deleting...' : 'Delete'}
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                    <td className="p-4">
+                      <div className="font-medium text-slate-900">{user.traits.email}</div>
+                      <div className="text-xs text-slate-400 font-mono mt-1">{user.id.substring(0, 8)}...</div>
+                    </td>
+                    <td className="p-4">
+                      <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider ${
+                        user.state === 'active' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                      }`}>
+                        {user.state}
+                      </span>
+                    </td>
+                    <td className="p-4 text-right">
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); setSelectedUser(user); }}
+                        className="text-blue-600 text-sm font-semibold hover:underline"
+                      >
+                        Details
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* User Details Sidebar */}
+        <div className="lg:col-span-1">
+          {selectedUser ? (
+            <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-6 sticky top-8">
+              <h2 className="text-xl font-bold text-slate-900 mb-6">User Details</h2>
+              
+              <div className="space-y-4 mb-8">
+                <div>
+                  <label className="block text-xs font-bold text-slate-400 uppercase">Email Address</label>
+                  <div className="text-slate-900 font-medium">{selectedUser.traits.email}</div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-400 uppercase">First Name</label>
+                    <div className="text-slate-900">{selectedUser.traits.first_name || '-'}</div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-400 uppercase">Last Name</label>
+                    <div className="text-slate-900">{selectedUser.traits.last_name || '-'}</div>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-400 uppercase">Division</label>
+                  <div className="text-slate-900">{selectedUser.traits.division || '-'}</div>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-400 uppercase">Identity ID</label>
+                  <div className="text-xs font-mono text-slate-500 break-all">{selectedUser.id}</div>
+                </div>
+              </div>
+
+              <div className="space-y-3 pt-6 border-t border-slate-100">
+                <h3 className="text-sm font-bold text-slate-900 mb-2">Administrative Actions</h3>
+                
+                <button 
+                  onClick={() => toggleState(selectedUser)}
+                  disabled={loading === selectedUser.id}
+                  className={`w-full py-2 rounded-lg font-semibold text-sm transition-colors ${
+                    selectedUser.state === 'active' 
+                      ? 'bg-amber-50 text-amber-700 hover:bg-amber-100' 
+                      : 'bg-green-50 text-green-700 hover:bg-green-100'
+                  }`}
+                >
+                  {selectedUser.state === 'active' ? 'Deactivate Account' : 'Reactivate Account'}
+                </button>
+
+                <button 
+                  onClick={() => revokeSessions(selectedUser.id)}
+                  disabled={loading === selectedUser.id}
+                  className="w-full py-2 bg-slate-50 text-slate-700 rounded-lg font-semibold text-sm hover:bg-slate-100 transition-colors"
+                >
+                  Revoke All Sessions
+                </button>
+
+                <button 
+                  onClick={() => handleDelete(selectedUser.id)}
+                  disabled={loading === selectedUser.id}
+                  className="w-full py-2 bg-red-50 text-red-700 rounded-lg font-semibold text-sm hover:bg-red-100 transition-colors"
+                >
+                  Delete Identity
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="bg-slate-50 border border-dashed border-slate-200 rounded-xl p-12 text-center text-slate-400 italic text-sm">
+              Select a user to view details and manage their account lifecycle.
+            </div>
+          )}
+        </div>
       </div>
       
-      <footer className="mt-8 pt-4 border-t border-slate-100 text-xs text-slate-400">
-        All actions are logged for audit purposes. Backend validates your JWT and Admin privileges.
+      <footer className="mt-12 pt-6 border-t border-slate-100 text-xs text-slate-400 text-center">
+        Zero-Trust Admin Proxy: All requests are signed with RS256 JWT and audited by the DMS Backend.
       </footer>
     </div>
   )

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -90,7 +91,6 @@ func SimpleAdminCheck(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		userID := r.Context().Value(UserIDKey).(string)
 
-		// Perbaikan endpoint Kratos Admin (Gunakan path /admin/identities karena Kratos v1.x redirect ke sana)
 		url := fmt.Sprintf("%s/admin/identities/%s", kratosAdminURL, userID)
 		resp, err := http.Get(url)
 		if err != nil {
@@ -147,7 +147,6 @@ func main() {
 		json.NewEncoder(w).Encode(resp)
 	})))
 
-	// Gunakan prefix /admin-api/ agar tidak overlap dengan /api/
 	mux.Handle("/admin-api/identities", AuthMiddleware(SimpleAdminCheck(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		adminID := r.Context().Value(UserIDKey).(string)
 		if r.Method == "GET" {
@@ -168,29 +167,107 @@ func main() {
 
 	mux.Handle("/admin-api/identities/", AuthMiddleware(SimpleAdminCheck(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		adminID := r.Context().Value(UserIDKey).(string)
-		parts := strings.Split(r.URL.Path, "/")
-		targetID := parts[len(parts)-1]
+		pathParts := strings.Split(strings.TrimPrefix(r.URL.Path, "/admin-api/identities/"), "/")
+		targetID := pathParts[0]
 
 		if targetID == "" {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
 
-		if r.Method == "DELETE" {
-			req, _ := http.NewRequest("DELETE", fmt.Sprintf("%s/admin/identities/%s", kratosAdminURL, targetID), nil)
-			resp, err := http.DefaultClient.Do(req)
-			if err != nil {
-				log.Printf("Admin Delete Error: %v", err)
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-			defer resp.Body.Close()
-			log.Printf("AUDIT: Admin %s deleted identity %s", adminID, targetID)
-			w.WriteHeader(resp.StatusCode)
-			io.Copy(w, resp.Body)
-			return
+		subResource := ""
+		if len(pathParts) > 1 {
+			subResource = pathParts[1]
 		}
-		w.WriteHeader(http.StatusMethodNotAllowed)
+
+		switch subResource {
+		case "": // /admin-api/identities/{id}
+			if r.Method == "GET" {
+				resp, err := http.Get(fmt.Sprintf("%s/admin/identities/%s", kratosAdminURL, targetID))
+				if err != nil {
+					http.Error(w, err.Error(), http.StatusInternalServerError)
+					return
+				}
+				defer resp.Body.Close()
+				w.Header().Set("Content-Type", "application/json")
+				io.Copy(w, resp.Body)
+			} else if r.Method == "DELETE" {
+				req, _ := http.NewRequest("DELETE", fmt.Sprintf("%s/admin/identities/%s", kratosAdminURL, targetID), nil)
+				resp, err := http.DefaultClient.Do(req)
+				if err != nil {
+					http.Error(w, err.Error(), http.StatusInternalServerError)
+					return
+				}
+				defer resp.Body.Close()
+				log.Printf("AUDIT: Admin %s deleted identity %s", adminID, targetID)
+				w.WriteHeader(resp.StatusCode)
+				io.Copy(w, resp.Body)
+			} else {
+				w.WriteHeader(http.StatusMethodNotAllowed)
+			}
+
+		case "state": // /admin-api/identities/{id}/state
+			if r.Method == "PUT" {
+				var body struct {
+					State string `json:"state"`
+				}
+				if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+					w.WriteHeader(http.StatusBadRequest)
+					return
+				}
+
+				// FIX: Gunakan PATCH (JSON Patch RFC 6902) untuk menghindari error credentials
+				patch := []map[string]interface{}{
+					{
+						"op":    "replace",
+						"path":  "/state",
+						"value": body.State,
+					},
+				}
+				patchJSON, _ := json.Marshal(patch)
+				
+				req, _ := http.NewRequest("PATCH", fmt.Sprintf("%s/admin/identities/%s", kratosAdminURL, targetID), bytes.NewBuffer(patchJSON))
+				req.Header.Set("Content-Type", "application/json-patch+json")
+				
+				respUpdate, err := http.DefaultClient.Do(req)
+				if err != nil {
+					http.Error(w, err.Error(), http.StatusInternalServerError)
+					return
+				}
+				defer respUpdate.Body.Close()
+
+				log.Printf("AUDIT: Admin %s patched identity %s state to %s", adminID, targetID, body.State)
+				w.WriteHeader(respUpdate.StatusCode)
+				io.Copy(w, respUpdate.Body)
+			}
+
+		case "sessions": // /admin-api/identities/{id}/sessions
+			if r.Method == "GET" {
+				resp, err := http.Get(fmt.Sprintf("%s/admin/identities/%s/sessions", kratosAdminURL, targetID))
+				if err != nil {
+					http.Error(w, err.Error(), http.StatusInternalServerError)
+					return
+				}
+				defer resp.Body.Close()
+				w.Header().Set("Content-Type", "application/json")
+				io.Copy(w, resp.Body)
+			} else if r.Method == "DELETE" {
+				req, _ := http.NewRequest("DELETE", fmt.Sprintf("%s/admin/identities/%s/sessions", kratosAdminURL, targetID), nil)
+				resp, err := http.DefaultClient.Do(req)
+				if err != nil {
+					http.Error(w, err.Error(), http.StatusInternalServerError)
+					return
+				}
+				defer resp.Body.Close()
+				log.Printf("AUDIT: Admin %s revoked all sessions for identity %s", adminID, targetID)
+				w.WriteHeader(resp.StatusCode)
+			} else {
+				w.WriteHeader(http.StatusMethodNotAllowed)
+			}
+
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
 	}))))
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
