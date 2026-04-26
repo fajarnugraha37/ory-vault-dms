@@ -8,9 +8,4 @@ serve:
     port: 4467
 
 namespaces:
-  - id: 0
-    name: User
-  - id: 1
-    name: Document
-  - id: 2
-    name: Division
+  location: file:///etc/config/keto/namespaces.ts

@@ -76,16 +76,22 @@ export default function Dashboard() {
             </div>
             
             {/* Admin Quick Action */}
-            {session?.identity?.traits.email?.includes('@ory-vault') && (
-              <div className="mt-6 pt-4 border-t border-blue-200">
+            <div className="mt-6 pt-4 border-t border-blue-200 flex flex-col gap-2">
+              <a 
+                href="/dashboard/documents"
+                className="text-sm font-bold text-blue-600 hover:text-blue-700"
+              >
+                Go to Document Explorer &rarr;
+              </a>
+              {session?.identity?.traits.email?.includes('@ory-vault') && (
                 <a 
                   href="/dashboard/admin/users"
                   className="text-sm font-bold text-red-600 hover:text-red-700"
                 >
                   Admin: User Management &rarr;
                 </a>
-              </div>
-            )}
+              )}
+            </div>
           </div>
 
           <div className="bg-green-50 p-6 rounded-lg border border-green-100">

@@ -168,5 +168,7 @@ desktop.ini
 # Docker
 .docker
 pgdata
+storage-data
 step-ca-data
 *.bak
+.sourcerer

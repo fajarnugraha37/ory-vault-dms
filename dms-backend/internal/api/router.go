@@ -6,16 +6,18 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/MicahParks/keyfunc/v3"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
-	"github.com/MicahParks/keyfunc/v3"
 	"github.com/nugra/ory-vault/dms-backend/internal/handler"
-	internal_mw "github.com/nugra/ory-vault/dms-backend/internal/middleware"
-	"github.com/nugra/ory-vault/dms-backend/internal/store"
+	"github.com/nugra/ory-vault/dms-backend/internal/keto"
 	"github.com/nugra/ory-vault/dms-backend/internal/kratos"
+	internal_mw "github.com/nugra/ory-vault/dms-backend/internal/middleware"
+	"github.com/nugra/ory-vault/dms-backend/internal/storage"
+	"github.com/nugra/ory-vault/dms-backend/internal/store"
 )
 
-func NewRouter(s *store.Store, k *kratos.Client, kf keyfunc.Keyfunc) http.Handler {
+func NewRouter(s *store.Store, k *kratos.Client, st *storage.Storage, kc *keto.Client, kf keyfunc.Keyfunc) http.Handler {
 	r := chi.NewRouter()
 
 	r.Use(middleware.RequestID)
@@ -43,6 +45,17 @@ func NewRouter(s *store.Store, k *kratos.Client, kf keyfunc.Keyfunc) http.Handle
 	})
 
 	h := handler.NewAdminHandler(s, k)
+	docHandler := handler.NewDocumentHandler(s, st, kc)
+
+	r.Route("/api/documents", func(r chi.Router) {
+		r.Use(internal_mw.AuthMiddleware(kf))
+		r.Post("/", docHandler.UploadDocument)
+		r.Get("/", docHandler.ListDocuments) // Nanti bisa diprotect lebih lanjut
+		
+		r.With(internal_mw.RequireDocumentPermission(kc, "view")).Get("/{id}/download", docHandler.DownloadDocument)
+		r.With(internal_mw.RequireDocumentPermission(kc, "delete")).Delete("/{id}", docHandler.DeleteDocument)
+		r.With(internal_mw.RequireDocumentPermission(kc, "owner")).Post("/{id}/share", docHandler.ShareDocument)
+	})
 	
 	r.Route("/admin-api", func(r chi.Router) {
 		r.Use(internal_mw.AuthMiddleware(kf))

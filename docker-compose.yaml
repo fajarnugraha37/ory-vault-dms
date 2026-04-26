@@ -36,7 +36,6 @@ services:
         condition: service_completed_successfully
     ports:
       - "4433:4433" # public (HTTPS)
-      # Port 4434 (Admin) dihapus dari exposure host untuk Zero Trust
     environment:
       - DSN=postgres://ory:vault-pass@vault-db:5432/ory_vault?sslmode=disable&search_path=kratos
       - SERVE_PUBLIC_TLS_CERT_PATH=/etc/config/kratos/certs/kratos.crt
@@ -79,6 +78,10 @@ services:
       timeout: 5s
       retries: 3
       start_period: 5s
+    deploy:
+      resources:
+        limits:
+          memory: 128M
 
   vault-keto:
     image: oryd/keto:v0.11
@@ -126,7 +129,6 @@ services:
     command: serve -c /etc/config/oathkeeper/oathkeeper.yaml
     networks:
       - ory-network
-
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:4456/health/ready || exit 1"]
       interval: 10s
@@ -177,6 +179,8 @@ services:
         condition: service_healthy
       vault-ui:
         condition: service_healthy
+      vault-storage:
+        condition: service_healthy
     ports:
       - "80:80"
       - "443:443"
@@ -189,7 +193,6 @@ services:
     healthcheck:
       test: ["CMD-SHELL", "nginx -t && pgrep nginx || exit 1"]
       interval: 10s
-
       timeout: 5s
       retries: 3
       start_period: 5s
@@ -223,11 +226,10 @@ services:
       --force && 
       chmod 644 /certs/gateway.crt /certs/gateway.key"
     healthcheck:
-      test: ["CMD-SHELL", "nginx -t || exit 1"]
-      interval: 10s
+      test: ["CMD-SHELL", "ls /certs/gateway.crt || exit 1"]
+      interval: 30s
       timeout: 5s
-      retries: 5
-      start_period: 5s
+      retries: 3
     deploy:
       resources:
         limits:
@@ -243,10 +245,15 @@ services:
         condition: service_healthy
       vault-keto:
         condition: service_healthy
+      vault-storage:
+        condition: service_healthy
     environment:
-      - DSN=postgres://ory:vault-pass@vault-db:5432/ory_vault?sslmode=disable&search_path=kratos
+      - DSN=postgres://ory:vault-pass@vault-db:5432/ory_vault?sslmode=disable&search_path=enterprise
       - JWKS_URL=http://vault-oathkeeper:4456/.well-known/jwks.json
       - KRATOS_ADMIN_URL=http://vault-kratos:4434
+      - STORAGE_ENDPOINT=vault-storage:9000
+      - STORAGE_ACCESS_KEY=ory-admin
+      - STORAGE_SECRET_KEY=vault-storage-pass
     networks:
       - ory-network
     healthcheck:
@@ -273,6 +280,30 @@ services:
       timeout: 5s
       retries: 3
       start_period: 15s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  vault-storage:
+    image: minio/minio
+    container_name: vault-storage
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      - MINIO_ROOT_USER=ory-admin
+      - MINIO_ROOT_PASSWORD=vault-storage-pass
+    volumes:
+      - ./storage-data:/data
+    networks:
+      - ory-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "9001:9001"
     deploy:
       resources:
         limits:
