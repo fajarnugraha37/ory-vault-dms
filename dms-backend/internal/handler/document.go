@@ -160,20 +160,14 @@ func (h *DocumentHandler) ListDocuments(w http.ResponseWriter, r *http.Request) 
 		folderID = &folderIDParam
 	}
 
-	// Simplest data isolation: fetch documents owned by the user.
-	// For Keto-backed sharing, we should ideally ask Keto: "List all Document objects where `user` has `view` relation".
-	// However, Keto Expand/Check API is for specific objects, not "Give me all objects".
-	// The standard Zanzibar pattern is to ask Keto for all relations for a Subject: `ListRelationships(namespace="Document", subject=userID)`.
-	// Then we filter the documents. Let's do that!
-
-	relations, err := h.Keto.ListRelationships(r.Context(), "Document", "", userID) // Empty relation gets all roles for this subject
+	// 1. Fetch all direct relationships for this user in Keto
+	relations, err := h.Keto.ListRelationships(r.Context(), "Document", "", userID)
 	if err != nil {
 		log.Printf("KETO_ERROR: Failed to list relationships: %v", err)
 		h.respondWithError(w, http.StatusInternalServerError, "Failed to check access")
 		return
 	}
 
-	// Find accessible doc IDs
 	accessibleDocs := make(map[string]bool)
 	for _, rel := range relations {
 		accessibleDocs[rel.Object] = true
@@ -184,27 +178,37 @@ func (h *DocumentHandler) ListDocuments(w http.ResponseWriter, r *http.Request) 
 		permittedIDs = append(permittedIDs, id)
 	}
 
-	// We also need documents where the user is an owner, which is handled above if the owner relation exists.
-	// Just as a fallback, we fetch documents where owner_id = userID directly from DB as well.
+	// 2. Fetch owned documents from DB
 	ownedDocs, err := h.Store.ListDocuments(r.Context(), userID, folderID)
 	if err != nil {
 		h.respondWithError(w, http.StatusInternalServerError, "Failed to list documents")
 		return
 	}
 
-	// Merge logic is skipped for brevity, let's just return owned docs + permitted docs
+	// 3. Fetch shared documents from DB
 	sharedDocs, err := h.Store.ListDocumentsFiltered(r.Context(), permittedIDs, 100, 0)
-	
-	// Create a unique set
+	if err != nil {
+		log.Printf("DB_WARN: Failed to fetch shared docs: %v", err)
+	}
+
 	docSet := make(map[string]store.Document)
 	for _, d := range ownedDocs {
-		if folderID == nil && d.FolderID != nil { continue } // Filter by folder if requested
-		if folderID != nil && (d.FolderID == nil || *d.FolderID != *folderID) { continue }
 		docSet[d.ID] = d
 	}
 	for _, d := range sharedDocs {
-		if folderID == nil && d.FolderID != nil { continue } // Filter by folder if requested
-		if folderID != nil && (d.FolderID == nil || *d.FolderID != *folderID) { continue }
+		// Logic: If user is at ROOT, show shared files that are either in ROOT
+		// or shared directly to the user (even if they live in a folder the user doesn't see).
+		if folderID != nil {
+			if d.FolderID == nil || *d.FolderID != *folderID {
+				continue
+			}
+		} else {
+			// At Root: include if doc is in root OR if it's NOT owned by the user
+			// (shared files appear at root if the folder structure is inaccessible).
+			if d.FolderID != nil && d.OwnerID == userID {
+				continue
+			}
+		}
 		docSet[d.ID] = d
 	}
 
@@ -293,7 +297,7 @@ func (h *DocumentHandler) DeleteDocument(w http.ResponseWriter, r *http.Request)
 // ShareDocument adds a viewer or editor relationship in Keto based on email.
 func (h *DocumentHandler) ShareDocument(w http.ResponseWriter, r *http.Request) {
 	docID := chi.URLParam(r, "id")
-	
+
 	var body struct {
 		Email    string `json:"email"`
 		Relation string `json:"relation"` // "viewer" or "editor"
@@ -321,17 +325,24 @@ func (h *DocumentHandler) ShareDocument(w http.ResponseWriter, r *http.Request) 
 	var targetUserID string
 	for _, ident := range identities {
 		traits, ok := ident.Traits.(map[string]interface{})
-		if ok && traits["email"] == body.Email {
+		if !ok {
+			continue
+		}
+		email, _ := traits["email"].(string)
+		if email == body.Email {
 			targetUserID = ident.Id
+			log.Printf("SHARE_DEBUG: Found target user %s for email %s", targetUserID, body.Email)
 			break
 		}
 	}
 
 	if targetUserID == "" {
+		log.Printf("SHARE_DEBUG: User with email %s NOT FOUND in %d identities", body.Email, len(identities))
 		h.respondWithError(w, http.StatusNotFound, "User with that email not found")
 		return
 	}
 
+	log.Printf("SHARE_DEBUG: Creating Keto relation: Document:%s # %s @ %s", docID, body.Relation, targetUserID)
 	if err := h.Keto.CreateRelationship(r.Context(), "Document", docID, body.Relation, targetUserID); err != nil {
 		log.Printf("KETO_ERROR: Failed to share document: %v", err)
 		h.respondWithError(w, http.StatusInternalServerError, "Failed to share document")
@@ -344,7 +355,7 @@ func (h *DocumentHandler) ShareDocument(w http.ResponseWriter, r *http.Request) 
 func (h *DocumentHandler) RevokeShareDocument(w http.ResponseWriter, r *http.Request) {
 	docID := chi.URLParam(r, "id")
 	targetUserID := chi.URLParam(r, "userId")
-	
+
 	var body struct {
 		Relation string `json:"relation"` // "viewer" or "editor"
 	}
@@ -358,6 +369,41 @@ func (h *DocumentHandler) RevokeShareDocument(w http.ResponseWriter, r *http.Req
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *DocumentHandler) ListDocumentAccess(w http.ResponseWriter, r *http.Request) {
+	docID := chi.URLParam(r, "id")
+	relations, err := h.Keto.ListRelationships(r.Context(), "Document", docID, "")
+	if err != nil {
+		h.respondWithError(w, http.StatusInternalServerError, "Failed to list access")
+		return
+	}
+
+	identities, _, _ := h.Kratos.ListIdentities(r.Context(), 1000, "")
+	idToEmail := make(map[string]string)
+	for _, id := range identities {
+		traits, ok := id.Traits.(map[string]interface{})
+		if ok {
+			email, _ := traits["email"].(string)
+			idToEmail[id.Id] = email
+		}
+	}
+
+	var accessList []map[string]string
+	for _, rel := range relations {
+		if rel.Subject.GetId() != "" {
+			email := idToEmail[rel.Subject.GetId()]
+			if email == "" {
+				email = rel.Subject.GetId()
+			}
+			accessList = append(accessList, map[string]string{
+				"user_id":  rel.Subject.GetId(),
+				"email":    email,
+				"relation": rel.Relation,
+			})
+		}
+	}
+	h.respondWithJSON(w, http.StatusOK, accessList)
 }
 
 func (h *DocumentHandler) RenameDocument(w http.ResponseWriter, r *http.Request) {
@@ -454,6 +500,19 @@ func (h *DocumentHandler) GeneratePublicLink(w http.ResponseWriter, r *http.Requ
 	h.respondWithJSON(w, http.StatusOK, map[string]string{"public_link_token": token})
 }
 
+// RevokePublicLink removes the anonymous access token.
+func (h *DocumentHandler) RevokePublicLink(w http.ResponseWriter, r *http.Request) {
+	docID := chi.URLParam(r, "id")
+
+	if err := h.Store.RevokePublicLink(r.Context(), docID); err != nil {
+		log.Printf("DB_ERROR: Failed to revoke public link: %v", err)
+		h.respondWithError(w, http.StatusInternalServerError, "Failed to revoke link")
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // DownloadPublicDocument streams the document using only the public token (no JWT needed).
 func (h *DocumentHandler) DownloadPublicDocument(w http.ResponseWriter, r *http.Request) {
 	token := chi.URLParam(r, "token")
@@ -485,4 +544,3 @@ func (h *DocumentHandler) DownloadPublicDocument(w http.ResponseWriter, r *http.
 		log.Printf("STREAM_ERROR: Client disconnected or stream failed: %v", err)
 	}
 }
-

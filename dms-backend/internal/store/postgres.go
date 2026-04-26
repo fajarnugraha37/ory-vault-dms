@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"log"
 	"strconv"
 	"strings"
 
@@ -32,10 +33,22 @@ type Role struct {
 
 func NewPostgresStore(dsn string) (*Store, error) {
 	db, err := sql.Open("postgres", dsn)
-	if err != nil { return nil, err }
-	if err := db.Ping(); err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
+
+	if err := db.Ping(); err != nil {
+		return nil, err
+	}
+
+	// Hardened search_path as per protocol
+	if _, err := db.Exec("SET search_path TO enterprise, app, public"); err != nil {
+		log.Printf("DB_WARN: Failed to set search_path: %v", err)
+	}
+
 	return &Store{db: db}, nil
 }
+
 
 func (s *Store) SaveAuditLog(ctx context.Context, adminID, action, targetID string, details interface{}, ip, ua string) error {
 	detailsJSON, _ := json.Marshal(details)
@@ -338,17 +351,27 @@ func (s *Store) GetDocument(ctx context.Context, id string) (*Document, error) {
 
 func (s *Store) GetDocumentByPublicLink(ctx context.Context, token string) (*Document, error) {
 	query := `
-		SELECT id, name, folder_id, owner_id, mime_type, size_bytes, storage_path, version, public_link_token, created_at, updated_at
+		SELECT id, name, folder_id::text, owner_id, mime_type, size_bytes, storage_path, version, public_link_token, created_at, updated_at
 		FROM app.documents WHERE public_link_token = $1
 	`
 	var d Document
+	var folderID sql.NullString
 	err := s.db.QueryRowContext(ctx, query, token).Scan(
-		&d.ID, &d.Name, &d.FolderID, &d.OwnerID, &d.MimeType, &d.SizeBytes, &d.StoragePath, &d.Version, &d.PublicLinkToken, &d.CreatedAt, &d.UpdatedAt,
+		&d.ID, &d.Name, &folderID, &d.OwnerID, &d.MimeType, &d.SizeBytes, &d.StoragePath, &d.Version, &d.PublicLinkToken, &d.CreatedAt, &d.UpdatedAt,
 	)
 	if err != nil {
 		return nil, err
 	}
+	if folderID.Valid {
+		d.FolderID = &folderID.String
+	}
 	return &d, nil
+}
+
+func (s *Store) RevokePublicLink(ctx context.Context, docID string) error {
+	query := `UPDATE app.documents SET public_link_token = NULL WHERE id = $1`
+	_, err := s.db.ExecContext(ctx, query, docID)
+	return err
 }
 
 func (s *Store) ListDocumentsFiltered(ctx context.Context, permittedDocIDs []string, limit, offset int) ([]Document, error) {

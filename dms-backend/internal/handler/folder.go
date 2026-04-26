@@ -89,11 +89,10 @@ func (h *FolderHandler) ListFolders(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 2. Fetch shared folders from Keto
+	// 2. Fetch all direct relationships for this user in Keto
 	relations, err := h.Keto.ListRelationships(r.Context(), "Folder", "", userID)
 	if err != nil {
-		h.respondWithError(w, http.StatusInternalServerError, "Failed to check folder access")
-		return
+		log.Printf("KETO_ERROR: Failed to check folder access: %v", err)
 	}
 
 	accessibleFolderIDs := make(map[string]bool)
@@ -108,8 +107,7 @@ func (h *FolderHandler) ListFolders(w http.ResponseWriter, r *http.Request) {
 
 	sharedFolders, err := h.Store.ListFoldersFiltered(r.Context(), permittedIDs, 100, 0)
 	if err != nil {
-		h.respondWithError(w, http.StatusInternalServerError, "Failed to list shared folders")
-		return
+		log.Printf("DB_WARN: Failed to list filtered folders: %v", err)
 	}
 
 	// Merge unique
@@ -118,8 +116,19 @@ func (h *FolderHandler) ListFolders(w http.ResponseWriter, r *http.Request) {
 		folderSet[f.ID] = f
 	}
 	for _, f := range sharedFolders {
-		if parentID == nil && f.ParentID != nil { continue }
-		if parentID != nil && (f.ParentID == nil || *f.ParentID != *parentID) { continue }
+		// Logic: If user is at ROOT, show shared folders that are either in ROOT
+		// or shared directly to the user (even if they live in a parent folder the user doesn't see).
+		if parentID != nil {
+			if f.ParentID == nil || *f.ParentID != *parentID {
+				continue
+			}
+		} else {
+			// At Root: include if folder is in root OR if it's NOT owned by the user
+			// (shared folders appear at root if the parent structure is inaccessible).
+			if f.ParentID != nil && f.OwnerID == userID {
+				continue
+			}
+		}
 		folderSet[f.ID] = f
 	}
 
@@ -183,17 +192,24 @@ func (h *FolderHandler) ShareFolder(w http.ResponseWriter, r *http.Request) {
 	var targetUserID string
 	for _, ident := range identities {
 		traits, ok := ident.Traits.(map[string]interface{})
-		if ok && traits["email"] == body.Email {
+		if !ok {
+			continue
+		}
+		email, _ := traits["email"].(string)
+		if email == body.Email {
 			targetUserID = ident.Id
+			log.Printf("SHARE_DEBUG: Found target user %s for folder email %s", targetUserID, body.Email)
 			break
 		}
 	}
 
 	if targetUserID == "" {
+		log.Printf("SHARE_DEBUG: User with email %s NOT FOUND in %d identities", body.Email, len(identities))
 		h.respondWithError(w, http.StatusNotFound, "User with that email not found")
 		return
 	}
 
+	log.Printf("SHARE_DEBUG: Creating Keto relation: Folder:%s # %s @ %s", folderID, body.Relation, targetUserID)
 	if err := h.Keto.CreateRelationship(r.Context(), "Folder", folderID, body.Relation, targetUserID); err != nil {
 		log.Printf("KETO_ERROR: Failed to share folder: %v", err)
 		h.respondWithError(w, http.StatusInternalServerError, "Failed to share folder")
@@ -206,7 +222,7 @@ func (h *FolderHandler) ShareFolder(w http.ResponseWriter, r *http.Request) {
 func (h *FolderHandler) RevokeShareFolder(w http.ResponseWriter, r *http.Request) {
 	folderID := chi.URLParam(r, "id")
 	targetUserID := chi.URLParam(r, "userId")
-	
+
 	var body struct {
 		Relation string `json:"relation"` // "viewer" or "editor"
 	}
@@ -220,4 +236,40 @@ func (h *FolderHandler) RevokeShareFolder(w http.ResponseWriter, r *http.Request
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *FolderHandler) ListFolderAccess(w http.ResponseWriter, r *http.Request) {
+	folderID := chi.URLParam(r, "id")
+	relations, err := h.Keto.ListRelationships(r.Context(), "Folder", folderID, "")
+	if err != nil {
+		h.respondWithError(w, http.StatusInternalServerError, "Failed to list access")
+		return
+	}
+
+	identities, _, _ := h.Kratos.ListIdentities(r.Context(), 1000, "")
+	idToEmail := make(map[string]string)
+	for _, id := range identities {
+		traits, ok := id.Traits.(map[string]interface{})
+		if ok {
+			email, _ := traits["email"].(string)
+			idToEmail[id.Id] = email
+		}
+	}
+
+	var accessList []map[string]string
+	for _, rel := range relations {
+		if rel.Subject.GetId() != "" {
+			email := idToEmail[rel.Subject.GetId()]
+			if email == "" {
+				email = rel.Subject.GetId()
+			}
+			accessList = append(accessList, map[string]string{
+				"user_id":  rel.Subject.GetId(),
+				"email":    email,
+				"relation": rel.Relation,
+			})
+		}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(accessList)
 }

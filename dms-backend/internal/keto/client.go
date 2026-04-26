@@ -4,10 +4,13 @@ import (
 	"context"
 	"errors"
 	"log"
-	"time"
+	"strings"
 	"sync"
+	"time"
 
-	client "github.com/ory/keto-client-go"
+	acl "github.com/ory/keto/proto/ory/keto/relation_tuples/v1alpha2"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 type CircuitBreaker struct {
@@ -21,10 +24,8 @@ type CircuitBreaker struct {
 func (cb *CircuitBreaker) Allow() bool {
 	cb.mu.Lock()
 	defer cb.mu.Unlock()
-
 	if cb.failures >= cb.maxFailures {
 		if time.Since(cb.lastFailure) > cb.resetTimeout {
-			// Half-open: try again
 			return true
 		}
 		return false
@@ -46,21 +47,38 @@ func (cb *CircuitBreaker) RecordFailure() {
 }
 
 type Client struct {
-	readAPI  *client.APIClient
-	writeAPI *client.APIClient
-	breaker  *CircuitBreaker
+	readConn  *grpc.ClientConn
+	writeConn *grpc.ClientConn
+	readSvc   acl.ReadServiceClient
+	writeSvc  acl.WriteServiceClient
+	checkSvc  acl.CheckServiceClient
+	breaker   *CircuitBreaker
 }
 
-func NewClient(readURL, writeURL string) *Client {
-	readCfg := client.NewConfiguration()
-	readCfg.Servers = client.ServerConfigurations{{URL: readURL}}
-	
-	writeCfg := client.NewConfiguration()
-	writeCfg.Servers = client.ServerConfigurations{{URL: writeURL}}
+func NewClient(readAddr, writeAddr string) *Client {
+	readAddr = strings.TrimPrefix(readAddr, "http://")
+	readAddr = strings.TrimPrefix(readAddr, "https://")
+	writeAddr = strings.TrimPrefix(writeAddr, "http://")
+	writeAddr = strings.TrimPrefix(writeAddr, "https://")
+
+	log.Printf("KETO_INIT: gRPC Read: %s, Write: %s", readAddr, writeAddr)
+
+	readConn, err := grpc.Dial(readAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		log.Printf("KETO_ERROR: Dial Read failed: %v", err)
+	}
+
+	writeConn, err := grpc.Dial(writeAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		log.Printf("KETO_ERROR: Dial Write failed: %v", err)
+	}
 
 	return &Client{
-		readAPI:  client.NewAPIClient(readCfg),
-		writeAPI: client.NewAPIClient(writeCfg),
+		readConn:  readConn,
+		writeConn: writeConn,
+		readSvc:   acl.NewReadServiceClient(readConn),
+		writeSvc:  acl.NewWriteServiceClient(writeConn),
+		checkSvc:  acl.NewCheckServiceClient(readConn),
 		breaker: &CircuitBreaker{
 			maxFailures:  3,
 			resetTimeout: 10 * time.Second,
@@ -74,55 +92,49 @@ func (c *Client) CheckPermission(ctx context.Context, namespace, object, relatio
 	if !c.breaker.Allow() {
 		return false, ErrServiceUnavailable
 	}
-
-	// Apply 500ms timeout explicitly as per specification
 	ctxTimeout, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
 	defer cancel()
 
-	log.Printf("KETO_AUTHZ: Checking if %s is %s on %s:%s", subject, relation, namespace, object)
-
-	req := c.readAPI.PermissionApi.CheckPermission(ctxTimeout).
-		Namespace(namespace).
-		Object(object).
-		Relation(relation).
-		SubjectId(subject)
-
-	resp, _, err := req.Execute()
+	resp, err := c.checkSvc.Check(ctxTimeout, &acl.CheckRequest{
+		Namespace: namespace,
+		Object:    object,
+		Relation:  relation,
+		Subject:   &acl.Subject{Ref: &acl.Subject_Id{Id: subject}},
+	})
 	if err != nil {
-		log.Printf("KETO_ERROR: CheckPermission failed: %v", err)
+		log.Printf("KETO_ERROR: Check failed: %v", err)
 		c.breaker.RecordFailure()
 		return false, err
 	}
-
 	c.breaker.RecordSuccess()
-	return resp.GetAllowed(), nil
+	return resp.Allowed, nil
 }
 
 func (c *Client) CreateRelationship(ctx context.Context, namespace, object, relation, subject string) error {
 	if !c.breaker.Allow() {
 		return ErrServiceUnavailable
 	}
-
-	// Apply 500ms timeout
 	ctxTimeout, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
 	defer cancel()
 
-	log.Printf("KETO_AUTHZ: Creating relationship %s -> %s -> %s:%s", subject, relation, namespace, object)
-
-	body := client.CreateRelationshipBody{
-		Namespace: &namespace,
-		Object:    &object,
-		Relation:  &relation,
-		SubjectId: &subject,
-	}
-
-	_, _, err := c.writeAPI.RelationshipApi.CreateRelationship(ctxTimeout).CreateRelationshipBody(body).Execute()
+	_, err := c.writeSvc.TransactRelationTuples(ctxTimeout, &acl.TransactRelationTuplesRequest{
+		RelationTupleDeltas: []*acl.RelationTupleDelta{
+			{
+				Action: acl.RelationTupleDelta_ACTION_INSERT,
+				RelationTuple: &acl.RelationTuple{
+					Namespace: namespace,
+					Object:    object,
+					Relation:  relation,
+					Subject:   &acl.Subject{Ref: &acl.Subject_Id{Id: subject}},
+				},
+			},
+		},
+	})
 	if err != nil {
 		log.Printf("KETO_ERROR: CreateRelationship failed: %v", err)
 		c.breaker.RecordFailure()
 		return err
 	}
-
 	c.breaker.RecordSuccess()
 	return nil
 }
@@ -131,56 +143,54 @@ func (c *Client) DeleteRelationship(ctx context.Context, namespace, object, rela
 	if !c.breaker.Allow() {
 		return ErrServiceUnavailable
 	}
-
-	// Apply 500ms timeout
 	ctxTimeout, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
 	defer cancel()
 
-	log.Printf("KETO_AUTHZ: Deleting relationship %s -> %s -> %s:%s", subject, relation, namespace, object)
-
-	req := c.writeAPI.RelationshipApi.DeleteRelationships(ctxTimeout).
-		Namespace(namespace).
-		Object(object).
-		Relation(relation).
-		SubjectId(subject)
-
-	_, err := req.Execute()
+	_, err := c.writeSvc.TransactRelationTuples(ctxTimeout, &acl.TransactRelationTuplesRequest{
+		RelationTupleDeltas: []*acl.RelationTupleDelta{
+			{
+				Action: acl.RelationTupleDelta_ACTION_DELETE,
+				RelationTuple: &acl.RelationTuple{
+					Namespace: namespace,
+					Object:    object,
+					Relation:  relation,
+					Subject:   &acl.Subject{Ref: &acl.Subject_Id{Id: subject}},
+				},
+			},
+		},
+	})
 	if err != nil {
 		log.Printf("KETO_ERROR: DeleteRelationship failed: %v", err)
 		c.breaker.RecordFailure()
 		return err
 	}
-
 	c.breaker.RecordSuccess()
 	return nil
 }
 
-func (c *Client) ListRelationships(ctx context.Context, namespace, relation, subject string) ([]client.Relationship, error) {
+func (c *Client) ListRelationships(ctx context.Context, namespace, object, subject string) ([]*acl.RelationTuple, error) {
 	if !c.breaker.Allow() {
 		return nil, ErrServiceUnavailable
 	}
-
 	ctxTimeout, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
 	defer cancel()
 
-	log.Printf("KETO_AUTHZ: Listing relationships for %s -> %s -> %s", subject, relation, namespace)
+	query := &acl.ListRelationTuplesRequest_Query{Namespace: namespace}
+	if object != "" {
+		query.Object = object
+	}
+	if subject != "" {
+		query.Subject = &acl.Subject{Ref: &acl.Subject_Id{Id: subject}}
+	}
 
-	req := c.readAPI.RelationshipApi.GetRelationships(ctxTimeout).
-		Namespace(namespace).
-		Relation(relation).
-		SubjectId(subject)
-
-	resp, _, err := req.Execute()
+	resp, err := c.readSvc.ListRelationTuples(ctxTimeout, &acl.ListRelationTuplesRequest{
+		Query: query,
+	})
 	if err != nil {
-		log.Printf("KETO_ERROR: GetRelationships failed: %v", err)
+		log.Printf("KETO_ERROR: ListRelationships failed: %v", err)
 		c.breaker.RecordFailure()
 		return nil, err
 	}
-
 	c.breaker.RecordSuccess()
-	
-	if resp.RelationTuples == nil {
-		return []client.Relationship{}, nil
-	}
 	return resp.RelationTuples, nil
 }
