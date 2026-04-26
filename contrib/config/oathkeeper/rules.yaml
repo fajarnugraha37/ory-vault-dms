@@ -31,6 +31,22 @@
   errors:
     - handler: json
 
+- id: "backend-public-api-rule"
+  upstream:
+    preserve_host: true
+    url: "http://vault-backend:8080"
+  match:
+    url: "https://<**>ory-vault.test/api/public/<**>"
+    methods: ["GET", "POST", "PUT", "DELETE", "PATCH"]
+  authenticators:
+    - handler: noop
+  authorizer:
+    handler: allow
+  mutators:
+    - handler: noop
+  errors:
+    - handler: json
+
 - id: "backend-api-rule"
   upstream:
     preserve_host: true

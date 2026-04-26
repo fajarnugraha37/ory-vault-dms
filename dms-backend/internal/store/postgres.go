@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"strconv"
+	"strings"
 
 	_ "github.com/lib/pq"
 )
@@ -131,35 +133,202 @@ func (s *Store) Close() error {
 
 // --- DMS: Documents & Folders ---
 
+type Folder struct {
+	ID        string  `json:"id"`
+	Name      string  `json:"name"`
+	ParentID  *string `json:"parent_id"`
+	OwnerID   string  `json:"owner_id"`
+	CreatedAt string  `json:"created_at"`
+	UpdatedAt string  `json:"updated_at"`
+}
+
 type Document struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	FolderID    *string `json:"folder_id"`
-	OwnerID     string `json:"owner_id"`
-	MimeType    string `json:"mime_type"`
-	SizeBytes   int64  `json:"size_bytes"`
-	StoragePath string `json:"storage_path"`
-	CreatedAt   string `json:"created_at"`
-	UpdatedAt   string `json:"updated_at"`
+	ID              string  `json:"id"`
+	Name            string  `json:"name"`
+	FolderID        *string `json:"folder_id"`
+	OwnerID         string  `json:"owner_id"`
+	MimeType        string  `json:"mime_type"`
+	SizeBytes       int64   `json:"size_bytes"`
+	StoragePath     string  `json:"storage_path"`
+	Version         int     `json:"version"`
+	PublicLinkToken *string `json:"public_link_token"`
+	CreatedAt       string  `json:"created_at"`
+	UpdatedAt       string  `json:"updated_at"`
+}
+
+type DocumentVersion struct {
+	ID            string `json:"id"`
+	DocumentID    string `json:"document_id"`
+	VersionNumber int    `json:"version_number"`
+	StoragePath   string `json:"storage_path"`
+	SizeBytes     int64  `json:"size_bytes"`
+	CreatedAt     string `json:"created_at"`
+}
+
+func (s *Store) CreateFolder(ctx context.Context, f *Folder) error {
+	query := `
+		INSERT INTO app.folders (id, name, parent_id, owner_id)
+		VALUES ($1, $2, $3, $4)
+	`
+	_, err := s.db.ExecContext(ctx, query, f.ID, f.Name, f.ParentID, f.OwnerID)
+	return err
+}
+
+func (s *Store) ListFolders(ctx context.Context, ownerID string, parentID *string) ([]Folder, error) {
+	query := `SELECT id, name, parent_id, owner_id, created_at, updated_at FROM app.folders WHERE owner_id = $1`
+	var rows *sql.Rows
+	var err error
+	
+	if parentID == nil {
+		query += ` AND parent_id IS NULL ORDER BY created_at DESC`
+		rows, err = s.db.QueryContext(ctx, query, ownerID)
+	} else {
+		query += ` AND parent_id = $2 ORDER BY created_at DESC`
+		rows, err = s.db.QueryContext(ctx, query, ownerID, parentID)
+	}
+	
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var folders []Folder
+	for rows.Next() {
+		var f Folder
+		if err := rows.Scan(&f.ID, &f.Name, &f.ParentID, &f.OwnerID, &f.CreatedAt, &f.UpdatedAt); err != nil {
+			return nil, err
+		}
+		folders = append(folders, f)
+	}
+	return folders, nil
+}
+
+func (s *Store) GetFolder(ctx context.Context, id string) (*Folder, error) {
+	query := `SELECT id, name, parent_id, owner_id, created_at, updated_at FROM app.folders WHERE id = $1`
+	var f Folder
+	err := s.db.QueryRowContext(ctx, query, id).Scan(&f.ID, &f.Name, &f.ParentID, &f.OwnerID, &f.CreatedAt, &f.UpdatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &f, nil
+}
+
+func (s *Store) RenameFolder(ctx context.Context, id, newName string) error {
+	query := `UPDATE app.folders SET name = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`
+	_, err := s.db.ExecContext(ctx, query, newName, id)
+	return err
+}
+
+func (s *Store) DeleteFolder(ctx context.Context, id string) error {
+	query := `DELETE FROM app.folders WHERE id = $1`
+	_, err := s.db.ExecContext(ctx, query, id)
+	return err
+}
+
+func (s *Store) ListFoldersFiltered(ctx context.Context, permittedFolderIDs []string, limit, offset int) ([]Folder, error) {
+	if len(permittedFolderIDs) == 0 {
+		return []Folder{}, nil
+	}
+
+	var placeholders []string
+	var args []interface{}
+	for i, id := range permittedFolderIDs {
+		placeholders = append(placeholders, "$"+strconv.Itoa(i+1))
+		args = append(args, id)
+	}
+
+	query := `
+		SELECT id, name, parent_id, owner_id, created_at, updated_at
+		FROM app.folders 
+		WHERE id IN (` + strings.Join(placeholders, ",") + `)
+		ORDER BY created_at DESC LIMIT $` + strconv.Itoa(len(args)+1) + ` OFFSET $` + strconv.Itoa(len(args)+2) + `
+	`
+	
+	args = append(args, limit, offset)
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var folders []Folder
+	for rows.Next() {
+		var f Folder
+		if err := rows.Scan(&f.ID, &f.Name, &f.ParentID, &f.OwnerID, &f.CreatedAt, &f.UpdatedAt); err != nil {
+			return nil, err
+		}
+		folders = append(folders, f)
+	}
+	return folders, nil
+}
+
+func (s *Store) RenameDocument(ctx context.Context, id, newName string) error {
+	query := `UPDATE app.documents SET name = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`
+	_, err := s.db.ExecContext(ctx, query, newName, id)
+	return err
+}
+
+func (s *Store) MoveDocument(ctx context.Context, id string, newFolderID *string) error {
+	query := `UPDATE app.documents SET folder_id = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`
+	_, err := s.db.ExecContext(ctx, query, newFolderID, id)
+	return err
 }
 
 func (s *Store) CreateDocument(ctx context.Context, doc *Document) error {
 	query := `
-		INSERT INTO app.documents (id, name, folder_id, owner_id, mime_type, size_bytes, storage_path)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		INSERT INTO app.documents (id, name, folder_id, owner_id, mime_type, size_bytes, storage_path, version, public_link_token)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 	`
-	_, err := s.db.ExecContext(ctx, query, doc.ID, doc.Name, doc.FolderID, doc.OwnerID, doc.MimeType, doc.SizeBytes, doc.StoragePath)
+	_, err := s.db.ExecContext(ctx, query, doc.ID, doc.Name, doc.FolderID, doc.OwnerID, doc.MimeType, doc.SizeBytes, doc.StoragePath, doc.Version, doc.PublicLinkToken)
 	return err
+}
+
+func (s *Store) UpdateDocumentVersion(ctx context.Context, docID string, newSizeBytes int64, newStoragePath string, newVersion int) error {
+	query := `UPDATE app.documents SET size_bytes = $1, storage_path = $2, version = $3, updated_at = CURRENT_TIMESTAMP WHERE id = $4`
+	_, err := s.db.ExecContext(ctx, query, newSizeBytes, newStoragePath, newVersion, docID)
+	return err
+}
+
+func (s *Store) CreateDocumentVersion(ctx context.Context, dv *DocumentVersion) error {
+	query := `
+		INSERT INTO app.document_versions (id, document_id, version_number, storage_path, size_bytes)
+		VALUES ($1, $2, $3, $4, $5)
+	`
+	_, err := s.db.ExecContext(ctx, query, dv.ID, dv.DocumentID, dv.VersionNumber, dv.StoragePath, dv.SizeBytes)
+	return err
+}
+
+func (s *Store) GetDocumentVersions(ctx context.Context, docID string) ([]DocumentVersion, error) {
+	query := `
+		SELECT id, document_id, version_number, storage_path, size_bytes, created_at
+		FROM app.document_versions WHERE document_id = $1 ORDER BY version_number DESC
+	`
+	rows, err := s.db.QueryContext(ctx, query, docID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var versions []DocumentVersion
+	for rows.Next() {
+		var v DocumentVersion
+		if err := rows.Scan(&v.ID, &v.DocumentID, &v.VersionNumber, &v.StoragePath, &v.SizeBytes, &v.CreatedAt); err != nil {
+			return nil, err
+		}
+		versions = append(versions, v)
+	}
+	return versions, nil
 }
 
 func (s *Store) GetDocument(ctx context.Context, id string) (*Document, error) {
 	query := `
-		SELECT id, name, folder_id, owner_id, mime_type, size_bytes, storage_path, created_at, updated_at
+		SELECT id, name, folder_id, owner_id, mime_type, size_bytes, storage_path, version, public_link_token, created_at, updated_at
 		FROM app.documents WHERE id = $1
 	`
 	var d Document
 	err := s.db.QueryRowContext(ctx, query, id).Scan(
-		&d.ID, &d.Name, &d.FolderID, &d.OwnerID, &d.MimeType, &d.SizeBytes, &d.StoragePath, &d.CreatedAt, &d.UpdatedAt,
+		&d.ID, &d.Name, &d.FolderID, &d.OwnerID, &d.MimeType, &d.SizeBytes, &d.StoragePath, &d.Version, &d.PublicLinkToken, &d.CreatedAt, &d.UpdatedAt,
 	)
 	if err != nil {
 		return nil, err
@@ -167,12 +336,59 @@ func (s *Store) GetDocument(ctx context.Context, id string) (*Document, error) {
 	return &d, nil
 }
 
-func (s *Store) ListDocuments(ctx context.Context, limit, offset int) ([]Document, error) {
+func (s *Store) GetDocumentByPublicLink(ctx context.Context, token string) (*Document, error) {
 	query := `
-		SELECT id, name, folder_id, owner_id, mime_type, size_bytes, storage_path, created_at, updated_at
-		FROM app.documents ORDER BY created_at DESC LIMIT $1 OFFSET $2
+		SELECT id, name, folder_id, owner_id, mime_type, size_bytes, storage_path, version, public_link_token, created_at, updated_at
+		FROM app.documents WHERE public_link_token = $1
 	`
-	rows, err := s.db.QueryContext(ctx, query, limit, offset)
+	var d Document
+	err := s.db.QueryRowContext(ctx, query, token).Scan(
+		&d.ID, &d.Name, &d.FolderID, &d.OwnerID, &d.MimeType, &d.SizeBytes, &d.StoragePath, &d.Version, &d.PublicLinkToken, &d.CreatedAt, &d.UpdatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return &d, nil
+}
+
+func (s *Store) ListDocumentsFiltered(ctx context.Context, permittedDocIDs []string, limit, offset int) ([]Document, error) {
+	if len(permittedDocIDs) == 0 {
+		return []Document{}, nil
+	}
+	
+	// Import "github.com/lib/pq" is assumed to be available
+	query := `
+		SELECT id, name, folder_id, owner_id, mime_type, size_bytes, storage_path, version, public_link_token, created_at, updated_at
+		FROM app.documents 
+		WHERE id = ANY($1)
+		ORDER BY created_at DESC LIMIT $2 OFFSET $3
+	`
+	// Fallback to basic string slice to Postgres array conversion using pq.Array
+	// This requires importing "github.com/lib/pq" as normal import, not just `_`
+	// Since we can't easily change the import here without knowing exactly how it's formatted, 
+	// we will manually construct the parameter string for the ANY clause to avoid breaking imports.
+	
+	if len(permittedDocIDs) == 0 {
+		return []Document{}, nil
+	}
+
+	var placeholders []string
+	var args []interface{}
+	for i, id := range permittedDocIDs {
+		placeholders = append(placeholders, "$"+strconv.Itoa(i+1))
+		args = append(args, id)
+	}
+
+	query = `
+		SELECT id, name, folder_id, owner_id, mime_type, size_bytes, storage_path, version, public_link_token, created_at, updated_at
+		FROM app.documents 
+		WHERE id IN (` + strings.Join(placeholders, ",") + `)
+		ORDER BY created_at DESC LIMIT $` + strconv.Itoa(len(args)+1) + ` OFFSET $` + strconv.Itoa(len(args)+2) + `
+	`
+	
+	args = append(args, limit, offset)
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -181,7 +397,7 @@ func (s *Store) ListDocuments(ctx context.Context, limit, offset int) ([]Documen
 	var docs []Document
 	for rows.Next() {
 		var d Document
-		if err := rows.Scan(&d.ID, &d.Name, &d.FolderID, &d.OwnerID, &d.MimeType, &d.SizeBytes, &d.StoragePath, &d.CreatedAt, &d.UpdatedAt); err != nil {
+		if err := rows.Scan(&d.ID, &d.Name, &d.FolderID, &d.OwnerID, &d.MimeType, &d.SizeBytes, &d.StoragePath, &d.Version, &d.PublicLinkToken, &d.CreatedAt, &d.UpdatedAt); err != nil {
 			return nil, err
 		}
 		docs = append(docs, d)
@@ -189,8 +405,48 @@ func (s *Store) ListDocuments(ctx context.Context, limit, offset int) ([]Documen
 	return docs, nil
 }
 
+func (s *Store) ListDocuments(ctx context.Context, ownerID string, folderID *string) ([]Document, error) {
+	// Simple listing for the owner. Shared docs will be handled via Keto.
+	query := `
+		SELECT id, name, folder_id, owner_id, mime_type, size_bytes, storage_path, version, public_link_token, created_at, updated_at
+		FROM app.documents WHERE owner_id = $1
+	`
+	var rows *sql.Rows
+	var err error
+	
+	if folderID == nil {
+		query += ` AND folder_id IS NULL ORDER BY created_at DESC`
+		rows, err = s.db.QueryContext(ctx, query, ownerID)
+	} else {
+		query += ` AND folder_id = $2 ORDER BY created_at DESC`
+		rows, err = s.db.QueryContext(ctx, query, ownerID, folderID)
+	}
+	
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var docs []Document
+	for rows.Next() {
+		var d Document
+		if err := rows.Scan(&d.ID, &d.Name, &d.FolderID, &d.OwnerID, &d.MimeType, &d.SizeBytes, &d.StoragePath, &d.Version, &d.PublicLinkToken, &d.CreatedAt, &d.UpdatedAt); err != nil {
+			return nil, err
+		}
+		docs = append(docs, d)
+	}
+	return docs, nil
+}
+
+func (s *Store) SetPublicLink(ctx context.Context, docID, token string) error {
+	query := `UPDATE app.documents SET public_link_token = $1 WHERE id = $2`
+	_, err := s.db.ExecContext(ctx, query, token, docID)
+	return err
+}
+
 func (s *Store) DeleteDocument(ctx context.Context, id string) error {
 	query := `DELETE FROM app.documents WHERE id = $1`
 	_, err := s.db.ExecContext(ctx, query, id)
 	return err
 }
+

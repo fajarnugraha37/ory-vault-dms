@@ -22,8 +22,20 @@ CREATE TABLE IF NOT EXISTS app.documents (
     mime_type TEXT NOT NULL,
     size_bytes BIGINT NOT NULL,
     storage_path TEXT NOT NULL, -- Path di MinIO
+    version INT NOT NULL DEFAULT 1,
+    public_link_token TEXT UNIQUE,
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS app.document_versions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    document_id UUID NOT NULL REFERENCES app.documents(id) ON DELETE CASCADE,
+    version_number INT NOT NULL,
+    storage_path TEXT NOT NULL,
+    size_bytes BIGINT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(document_id, version_number)
 );
 
 -- Set search paths for the database
