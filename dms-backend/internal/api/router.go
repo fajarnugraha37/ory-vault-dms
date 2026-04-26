@@ -41,7 +41,7 @@ func NewRouter(s *store.Store, k *kratos.Client, st *storage.Storage, kc *keto.C
 
 	h := handler.NewAdminHandler(s, k)
 	docHandler := handler.NewDocumentHandler(s, st, kc, k)
-	folderHandler := handler.NewFolderHandler(s, kc, k)
+	folderHandler := handler.NewFolderHandler(s, st, kc, k)
 
 	// --- PROTECTED ROUTES ---
 	r.Route("/api", func(r chi.Router) {

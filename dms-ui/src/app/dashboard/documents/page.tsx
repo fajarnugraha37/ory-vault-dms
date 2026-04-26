@@ -49,7 +49,8 @@ import {
   MoveRight,
   UserX,
   Copy,
-  Users
+  Users,
+  Fingerprint
 } from "lucide-react";
 
 const fetcher = (url: string) => axios.get(url, { withCredentials: true }).then(res => res.data);
@@ -95,11 +96,15 @@ export default function DocumentExplorerPage() {
   const [activeTab, setActiveTab] = useState("owned");
   const [currentFolder, setCurrentFolder] = useState<string | null>(null);
   const [folderHistory, setFolderHistory] = useState<{id: string | null, name: string}[]>([{id: null, name: "Root"}]);
+  const [sortBy, setSortBy] = useState<'name' | 'date' | 'type'>('name');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+  const [pageSize, setPageSize] = useState(20);
+  const [offset, setOffset] = useState(0);
   
   const { data: me } = useSWR('/api/me', fetcher);
   
-  const docUrl = `/api/documents?limit=100&offset=0${currentFolder ? `&folder_id=${currentFolder}` : ''}`;
-  const folderUrl = `/api/folders?limit=100&offset=0${currentFolder ? `&parent_id=${currentFolder}` : ''}`;
+  const docUrl = `/api/documents?limit=${pageSize}&offset=${offset}&sort_by=${sortBy}&sort_order=${sortOrder}${currentFolder ? `&folder_id=${currentFolder}` : ''}`;
+  const folderUrl = `/api/folders?limit=${pageSize}&offset=${offset}&sort_by=${sortBy}&sort_order=${sortOrder}${currentFolder ? `&parent_id=${currentFolder}` : ''}`;
   
   const { data: documents, mutate: mutateDocs } = useSWR<Document[]>(docUrl, fetcher);
   const { data: folders, mutate: mutateFolders } = useSWR<Folder[]>(folderUrl, fetcher);
@@ -124,10 +129,11 @@ export default function DocumentExplorerPage() {
   const { data: accessList, mutate: mutateAccess } = useSWR<AccessRelation[]>(shareObj ? `/api/${shareObj.type === 'Document' ? 'documents' : 'folders'}/${shareObj.id}/access` : null, fetcher);
 
   useEffect(() => {
-    // Forced revalidation on folder change
+    // Reset offset when changing folders or tabs
+    setOffset(0);
     mutateDocs();
     mutateFolders();
-  }, [currentFolder]);
+  }, [currentFolder, activeTab]);
 
   const handleAction = async (name: string, fn: () => Promise<any>) => {
     try {
@@ -260,8 +266,42 @@ export default function DocumentExplorerPage() {
   };
 
   const myUserId = me?.user_id;
+
+  // Sorting logic
+  const sortItems = (items: any[]) => {
+    return [...items].sort((a, b) => {
+      let comparison = 0;
+      if (sortBy === 'name') {
+        comparison = a.name.localeCompare(b.name);
+      } else if (sortBy === 'date') {
+        comparison = new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+      } else if (sortBy === 'type') {
+        // Folders (type Folder) always come before Documents (type Document)
+        const aType = a.mime_type ? 'file' : 'folder';
+        const bType = b.mime_type ? 'file' : 'folder';
+        comparison = aType.localeCompare(bType);
+      }
+      return sortOrder === 'asc' ? comparison : -comparison;
+    });
+  };
+
   const filteredDocs = documents?.filter(d => activeTab === "owned" ? d.owner_id === myUserId : d.owner_id !== myUserId) || [];
   const filteredFolders = folders?.filter(f => activeTab === "owned" ? f.owner_id === myUserId : f.owner_id !== myUserId) || [];
+  
+  // Final combined list: Folders first, then Documents
+  const combinedItems = [
+    ...sortItems(filteredFolders).map(f => ({ ...f, isFolder: true })),
+    ...sortItems(filteredDocs).map(d => ({ ...d, isFolder: false }))
+  ];
+
+  const toggleSort = (field: 'name' | 'date' | 'type') => {
+    if (sortBy === field) {
+      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortBy(field);
+      setSortOrder('asc');
+    }
+  };
 
   return (
     <div className="bg-slate-50 min-h-screen pb-20 font-sans">
@@ -318,35 +358,82 @@ export default function DocumentExplorerPage() {
                 </CardHeader>
                 <CardContent className="p-0">
                     <Table>
-                        <TableHeader><TableRow className="bg-slate-900 hover:bg-slate-900"><TableHead className="pl-8 text-white font-black uppercase text-[10px] tracking-widest py-5">Name</TableHead><TableHead className="text-white font-black uppercase text-[10px] tracking-widest">Type / Size</TableHead><TableHead className="text-white font-black uppercase text-[10px] tracking-widest text-right pr-8">Actions</TableHead></TableRow></TableHeader>
+                        <TableHeader><TableRow className="bg-slate-900 hover:bg-slate-900">
+                            <TableHead className="pl-8 text-white font-black uppercase text-[10px] tracking-widest py-5 cursor-pointer hover:bg-slate-800 transition-colors" onClick={() => toggleSort('name')}>Name {sortBy === 'name' && (sortOrder === 'asc' ? '↑' : '↓')}</TableHead>
+                            <TableHead className="text-white font-black uppercase text-[10px] tracking-widest cursor-pointer hover:bg-slate-800 transition-colors" onClick={() => toggleSort('type')}>Type / Size {sortBy === 'type' && (sortOrder === 'asc' ? '↑' : '↓')}</TableHead>
+                            <TableHead className="text-white font-black uppercase text-[10px] tracking-widest cursor-pointer hover:bg-slate-800 transition-colors" onClick={() => toggleSort('date')}>Created {sortBy === 'date' && (sortOrder === 'asc' ? '↑' : '↓')}</TableHead>
+                            <TableHead className="text-white font-black uppercase text-[10px] tracking-widest">Modified</TableHead>
+                            <TableHead className="text-white font-black uppercase text-[10px] tracking-widest text-right pr-8">Actions</TableHead>
+                        </TableRow></TableHeader>
                         <TableBody>
-                            {filteredFolders.map((f) => (
-                                <TableRow key={f.id} className="border-b-2 border-slate-50 hover:bg-slate-50/80 transition-colors">
-                                    <TableCell className="pl-8 py-5 cursor-pointer flex items-center gap-3" onClick={() => navigateTo(f.id, f.name)}>
-                                        <div className="bg-blue-50 text-blue-600 p-2 rounded-lg border-2 border-blue-100"><FolderIcon size={18} className="fill-blue-100" /></div>
-                                        <div><div className="font-black text-slate-900">{f.name}</div><div className="text-[9px] font-mono text-slate-400">DIR_{f.id.split('-')[0]}</div></div>
+                            {combinedItems.map((item) => (
+                                <TableRow key={item.id} className="border-b-2 border-slate-50 hover:bg-slate-50/80 transition-colors">
+                                    <TableCell className="pl-8 py-5 cursor-pointer flex items-center gap-3" onClick={() => item.isFolder && navigateTo(item.id, item.name)}>
+                                        <div className={`${item.isFolder ? 'bg-blue-50 text-blue-600 border-blue-100' : 'bg-slate-100 text-slate-500 border-slate-200'} p-2 rounded-lg border-2`}>
+                                            {item.isFolder ? <FolderIcon size={18} className="fill-blue-100" /> : <FileText size={18} />}
+                                        </div>
+                                        <div>
+                                            <div className="font-black text-slate-900">{item.name}</div>
+                                            <div className="text-[9px] font-mono text-slate-400 flex items-center gap-2">
+                                                {item.isFolder ? `DIR_${item.id.split('-')[0]}` : `DOC_${item.id.split('-')[0]}`}
+                                                {!item.isFolder && item.version > 1 && <Badge variant="outline" className="text-[8px] h-4">v{item.version}</Badge>}
+                                                {!item.isFolder && item.public_link_token && <LinkIcon size={10} className="text-green-500"/>}
+                                            </div>
+                                        </div>
                                     </TableCell>
-                                    <TableCell><Badge variant="outline" className="font-mono text-[9px] border-2">FOLDER</Badge></TableCell>
+                                    <TableCell>
+                                        {item.isFolder ? (
+                                            <Badge variant="outline" className="font-mono text-[9px] border-2">FOLDER</Badge>
+                                        ) : (
+                                            <div className="flex flex-col gap-0.5">
+                                                <Badge variant="secondary" className="w-max text-[8px] font-mono">{item.mime_type.split('/')[1]}</Badge>
+                                                <span className="text-[10px] font-bold text-slate-400">{formatBytes(item.size_bytes)}</span>
+                                            </div>
+                                        )}
+                                    </TableCell>
+                                    <TableCell><span className="text-[10px] font-bold text-slate-500">{new Date(item.created_at).toLocaleDateString()}</span></TableCell>
+                                    <TableCell><span className="text-[10px] font-bold text-slate-400 italic">{new Date(item.updated_at || item.created_at).toLocaleDateString()}</span></TableCell>
                                     <TableCell className="text-right pr-8" onClick={e => e.stopPropagation()}>
                                         <div className="flex justify-end gap-2">
-                                            {(f.user_permission === 'owner' || f.user_permission === 'editor') && (
+                                            <Button variant="outline" size="icon" className="h-8 w-8 rounded-lg border-2 text-slate-400" onClick={() => {navigator.clipboard.writeText(item.id); toast.success(`${item.isFolder ? 'Folder' : 'Document'} ID Copied`);}} title="Copy ID"><Fingerprint size={14}/></Button>
+
+                                            {!item.isFolder && <Button variant="outline" size="icon" className="h-8 w-8 rounded-lg border-2 text-blue-600" onClick={() => handleDownload(item)} title="Download"><DownloadCloud size={14}/></Button>}
+                                            
+                                            {(item.user_permission === 'owner' || item.user_permission === 'editor') && (
                                                 <>
+                                                    {!item.isFolder && <Button variant="outline" size="icon" className="h-8 w-8 rounded-lg border-2 text-slate-400" onClick={() => handleCopy(item.id)} title="Copy"><Copy size={14}/></Button>}
+
                                                     <Dialog>
-                                                        <DialogTrigger asChild><Button variant="outline" size="icon" className="h-8 w-8 rounded-lg border-2 text-slate-600" onClick={() => {setRenameObj({id: f.id, name: f.name, type: 'Folder'}); setNewName(f.name);}}><Edit2 size={14}/></Button></DialogTrigger>
+                                                        <DialogTrigger asChild><Button variant="outline" size="icon" className="h-8 w-8 rounded-lg border-2 text-slate-600" onClick={() => {setRenameObj({id: item.id, name: item.name, type: item.isFolder ? 'Folder' : 'Document'}); setNewName(item.name);}} title="Rename"><Edit2 size={14}/></Button></DialogTrigger>
                                                         <DialogContent className="border-4 border-slate-900 rounded-[2rem]">
-                                                            <DialogHeader><DialogTitle className="font-black uppercase italic">Rename Folder</DialogTitle></DialogHeader>
+                                                            <DialogHeader><DialogTitle className="font-black uppercase italic">Rename {item.isFolder ? 'Folder' : 'File'}</DialogTitle></DialogHeader>
                                                             <Input value={newName} onChange={e => setNewName(e.target.value)} className="rounded-xl border-2 font-bold h-12" />
                                                             <DialogFooter><DialogClose asChild><Button onClick={handleRename} className="w-full font-black py-6 rounded-xl">Save</Button></DialogClose></DialogFooter>
                                                         </DialogContent>
                                                     </Dialog>
 
-                                                    {f.user_permission === 'owner' && (
+                                                    {item.user_permission === 'owner' && !item.isFolder && (
                                                         <Dialog>
-                                                            <DialogTrigger asChild><Button variant="outline" size="icon" className="h-8 w-8 rounded-lg border-2 text-indigo-600" onClick={() => setShareObj({id: f.id, type: 'Folder'})}><Share2 size={14}/></Button></DialogTrigger>
+                                                            <DialogTrigger asChild><Button variant="outline" size="icon" className="h-8 w-8 rounded-lg border-2 text-emerald-600" onClick={() => setMoveDoc(item)} title="Move"><MoveRight size={14}/></Button></DialogTrigger>
                                                             <DialogContent className="border-4 border-slate-900 rounded-[2rem]">
-                                                                <DialogHeader><DialogTitle className="font-black uppercase italic">Share Folder</DialogTitle></DialogHeader>
+                                                                <DialogHeader><DialogTitle className="font-black uppercase italic">Move File</DialogTitle><DialogDescription>Enter target Folder ID (leave empty for Root)</DialogDescription></DialogHeader>
+                                                                <Input value={targetFolderId} onChange={e => setTargetFolderId(e.target.value)} placeholder="Folder UUID" className="rounded-xl border-2 font-mono h-12 text-xs" />
+                                                                <DialogFooter><DialogClose asChild><Button onClick={handleMove} className="w-full font-black py-6 rounded-xl">Move</Button></DialogClose></DialogFooter>
+                                                            </DialogContent>
+                                                        </Dialog>
+                                                    )}
+
+                                                    {item.user_permission === 'owner' && (
+                                                        <Dialog>
+                                                            <DialogTrigger asChild><Button variant="outline" size="icon" className="h-8 w-8 rounded-lg border-2 text-indigo-600" onClick={() => setShareObj({id: item.id, type: item.isFolder ? 'Folder' : 'Document', token: item.public_link_token})} title="Share"><Share2 size={14}/></Button></DialogTrigger>
+                                                            <DialogContent className="border-4 border-slate-900 rounded-[2rem]">
+                                                                <DialogHeader><DialogTitle className="font-black uppercase italic">Share {item.isFolder ? 'Folder' : 'File'}</DialogTitle></DialogHeader>
                                                                 <Tabs defaultValue="share">
-                                                                    <TabsList className="w-full bg-slate-100 p-1 rounded-xl mb-4"><TabsTrigger value="share" className="w-1/2 rounded-lg font-black text-[10px]">SHARE</TabsTrigger><TabsTrigger value="access" className="w-1/2 rounded-lg font-black text-[10px]">ACCESS_LIST</TabsTrigger></TabsList>
+                                                                    <TabsList className="w-full bg-slate-100 p-1 rounded-xl mb-4">
+                                                                        <TabsTrigger value="share" className="w-1/3 text-[9px] font-black">SHARE</TabsTrigger>
+                                                                        <TabsTrigger value="access" className="w-1/3 text-[9px] font-black">USERS</TabsTrigger>
+                                                                        {!item.isFolder && <TabsTrigger value="public" className="w-1/3 text-[9px] font-black">PUBLIC</TabsTrigger>}
+                                                                    </TabsList>
                                                                     <TabsContent value="share" className="space-y-4">
                                                                         <Input value={shareEmail} onChange={e => setShareEmail(e.target.value)} placeholder="Target Email" className="rounded-xl border-2 font-bold h-12" />
                                                                         <div className="flex gap-2"><Button variant={shareRelation === 'viewer' ? 'default' : 'outline'} className="flex-1 rounded-xl font-black h-12" onClick={() => setShareRelation('viewer')}>VIEWER</Button><Button variant={shareRelation === 'editor' ? 'default' : 'outline'} className="flex-1 rounded-xl font-black h-12" onClick={() => setShareRelation('editor')}>EDITOR</Button></div>
@@ -370,101 +457,24 @@ export default function DocumentExplorerPage() {
                                                                             {!accessList?.length && <div className="text-center py-8 text-slate-400 font-bold text-xs">NO_SHARED_USERS</div>}
                                                                         </ScrollArea>
                                                                     </TabsContent>
-                                                                </Tabs>
-                                                            </DialogContent>
-                                                        </Dialog>
-                                                    )}
-                                                    
-                                                    {f.user_permission === 'owner' && (
-                                                        <Button variant="outline" size="icon" className="h-8 w-8 rounded-lg border-2 text-red-500" onClick={() => handleDeleteFolder(f.id)}><Trash2 size={14}/></Button>
-                                                    )}
-                                                </>
-                                            )}
-                                            <ChevronRight size={16} className="text-slate-300 ml-2" />
-                                        </div>
-                                    </TableCell>
-                                </TableRow>
-                            ))}
-                            {filteredDocs.map((d) => (
-                                <TableRow key={d.id} className="border-b-2 border-slate-50 hover:bg-slate-50/80 transition-colors">
-                                    <TableCell className="pl-8 py-5">
-                                        <div className="flex items-center gap-3">
-                                            <div className="bg-slate-100 text-slate-500 p-2 rounded-lg border-2 border-slate-200"><FileText size={18} /></div>
-                                            <div><div className="font-black text-slate-900">{d.name}</div><div className="text-[9px] font-mono text-slate-400 flex items-center gap-2">DOC_{d.id.split('-')[0]} <Badge variant="outline" className="text-[8px] h-4">v{d.version}</Badge> {d.public_link_token && <LinkIcon size={10} className="text-green-500"/>}</div></div>
-                                        </div>
-                                    </TableCell>
-                                    <TableCell><div className="flex flex-col gap-0.5"><Badge variant="secondary" className="w-max text-[8px] font-mono">{d.mime_type.split('/')[1]}</Badge><span className="text-[10px] font-bold text-slate-400">{formatBytes(d.size_bytes)}</span></div></TableCell>
-                                    <TableCell className="text-right pr-8">
-                                        <div className="flex justify-end gap-2">
-                                            <Button variant="outline" size="icon" className="h-8 w-8 rounded-lg border-2 text-blue-600" onClick={() => handleDownload(d)} title="Download"><DownloadCloud size={14}/></Button>
-                                            
-                                            {(d.user_permission === 'owner' || d.user_permission === 'editor') && (
-                                                <>
-                                                    <Button variant="outline" size="icon" className="h-8 w-8 rounded-lg border-2 text-slate-400" onClick={() => handleCopy(d.id)} title="Copy"><Copy size={14}/></Button>
-
-                                                    <Dialog>
-                                                        <DialogTrigger asChild><Button variant="outline" size="icon" className="h-8 w-8 rounded-lg border-2 text-slate-600" onClick={() => {setRenameObj({id: d.id, name: d.name, type: 'Document'}); setNewName(d.name);}} title="Rename"><Edit2 size={14}/></Button></DialogTrigger>
-                                                        <DialogContent className="border-4 border-slate-900 rounded-[2rem]">
-                                                            <DialogHeader><DialogTitle className="font-black uppercase italic">Rename File</DialogTitle></DialogHeader>
-                                                            <Input value={newName} onChange={e => setNewName(e.target.value)} className="rounded-xl border-2 font-bold h-12" />
-                                                            <DialogFooter><DialogClose asChild><Button onClick={handleRename} className="w-full font-black py-6 rounded-xl">Save</Button></DialogClose></DialogFooter>
-                                                        </DialogContent>
-                                                    </Dialog>
-
-                                                    <Dialog>
-                                                        <DialogTrigger asChild><Button variant="outline" size="icon" className="h-8 w-8 rounded-lg border-2 text-emerald-600" onClick={() => setMoveDoc(d)} title="Move"><MoveRight size={14}/></Button></DialogTrigger>
-                                                        <DialogContent className="border-4 border-slate-900 rounded-[2rem]">
-                                                            <DialogHeader><DialogTitle className="font-black uppercase italic">Move File</DialogTitle><DialogDescription>Enter target Folder ID (leave empty for Root)</DialogDescription></DialogHeader>
-                                                            <Input value={targetFolderId} onChange={e => setTargetFolderId(e.target.value)} placeholder="Folder UUID" className="rounded-xl border-2 font-mono h-12 text-xs" />
-                                                            <DialogFooter><DialogClose asChild><Button onClick={handleMove} className="w-full font-black py-6 rounded-xl">Move</Button></DialogClose></DialogFooter>
-                                                        </DialogContent>
-                                                    </Dialog>
-
-                                                    {d.user_permission === 'owner' && (
-                                                        <Dialog>
-                                                            <DialogTrigger asChild><Button variant="outline" size="icon" className="h-8 w-8 rounded-lg border-2 text-indigo-600" onClick={() => setShareObj({id: d.id, type: 'Document', token: d.public_link_token})} title="Share"><Share2 size={14}/></Button></DialogTrigger>
-                                                            <DialogContent className="border-4 border-slate-900 rounded-[2rem]">
-                                                                <Tabs defaultValue="share">
-                                                                    <TabsList className="w-full bg-slate-100 p-1 rounded-xl mb-4"><TabsTrigger value="share" className="w-1/3 text-[9px] font-black">SHARE</TabsTrigger><TabsTrigger value="access" className="w-1/3 text-[9px] font-black">USERS</TabsTrigger><TabsTrigger value="public" className="w-1/3 text-[9px] font-black">PUBLIC</TabsTrigger></TabsList>
-                                                                    <TabsContent value="share" className="space-y-4">
-                                                                        <Input value={shareEmail} onChange={e => setShareEmail(e.target.value)} placeholder="Email" className="rounded-xl h-12 border-2" />
-                                                                        <div className="flex gap-2"><Button variant={shareRelation === 'viewer' ? 'default' : 'outline'} className="flex-1 h-12 rounded-xl font-black" onClick={() => setShareRelation('viewer')}>VIEWER</Button><Button variant={shareRelation === 'editor' ? 'default' : 'outline'} className="flex-1 h-12 rounded-xl font-black" onClick={() => setShareRelation('editor')}>EDITOR</Button></div>
-                                                                        <Button onClick={handleShare} className="w-full h-12 rounded-xl font-black bg-slate-900 text-white uppercase text-[10px] tracking-widest">Grant Access</Button>
-                                                                    </TabsContent>
-                                                                    <TabsContent value="access">
-                                                                        <ScrollArea className="h-48 border-2 rounded-xl p-2 bg-slate-50">
-                                                                            {accessList?.map(acc => (
-                                                                                <div key={acc.user_id} className="flex justify-between items-center p-3 bg-white border rounded-xl mb-2">
-                                                                                    <div className="text-[10px] font-black">
-                                                                                        {acc.email || acc.user_id.substring(0,13) + "..."} 
-                                                                                        <Badge variant="secondary" className="ml-2 text-[8px] uppercase">{acc.relation}</Badge>
-                                                                                    </div>
-                                                                                    {acc.relation !== 'owner' && (
-                                                                                        <Button variant="ghost" size="icon" className="h-6 w-6 text-red-400 hover:text-red-600 hover:bg-red-50" onClick={() => handleRevoke(acc.user_id, acc.relation)}>
-                                                                                            <UserX size={12}/>
-                                                                                        </Button>
-                                                                                    )}
+                                                                    {!item.isFolder && (
+                                                                        <TabsContent value="public" className="space-y-4">
+                                                                            {shareObj?.token ? (
+                                                                                <div className="p-4 bg-green-50 border-2 border-green-200 rounded-2xl flex flex-col gap-3">
+                                                                                    <div className="text-[10px] font-black text-green-700 uppercase">Active Public Signal</div>
+                                                                                    <div className="bg-white border p-3 rounded-xl font-mono text-[9px] break-all">{`${window.location.origin}/public/${shareObj.token}`}</div>
+                                                                                    <div className="flex gap-2"><Button size="sm" className="flex-1 bg-green-600 font-black h-10 text-[10px] rounded-xl text-white" onClick={() => {navigator.clipboard.writeText(`${window.location.origin}/public/${shareObj?.token}`); toast.success("Copied!");}}>COPY</Button><Button size="sm" variant="destructive" className="flex-1 font-black h-10 text-[10px] rounded-xl" onClick={handleRevokePublic}>REVOKE</Button></div>
                                                                                 </div>
-                                                                            ))}
-                                                                            {!accessList?.length && <div className="text-center py-8 text-slate-400 font-bold text-xs">NO_SHARED_USERS</div>}
-                                                                        </ScrollArea>
-                                                                    </TabsContent>
-                                                                    <TabsContent value="public" className="space-y-4">
-                                                                        {shareObj?.token ? (
-                                                                            <div className="p-4 bg-green-50 border-2 border-green-200 rounded-2xl flex flex-col gap-3">
-                                                                                <div className="text-[10px] font-black text-green-700 uppercase">Active Public Signal</div>
-                                                                                <div className="bg-white border p-3 rounded-xl font-mono text-[9px] break-all">{`${window.location.origin}/public/${shareObj.token}`}</div>
-                                                                                <div className="flex gap-2"><Button size="sm" className="flex-1 bg-green-600 font-black h-10 text-[10px] rounded-xl text-white" onClick={() => {navigator.clipboard.writeText(`${window.location.origin}/public/${shareObj?.token}`); toast.success("Copied!");}}>COPY</Button><Button size="sm" variant="destructive" className="flex-1 font-black h-10 text-[10px] rounded-xl" onClick={handleRevokePublic}>REVOKE</Button></div>
-                                                                            </div>
-                                                                        ) : <Button onClick={handlePublicLink} className="w-full h-12 rounded-xl bg-slate-900 font-black text-white uppercase text-xs">Generate Public Signal</Button>}
-                                                                    </TabsContent>
+                                                                            ) : <Button onClick={handlePublicLink} className="w-full h-12 rounded-xl bg-slate-900 font-black text-white uppercase text-xs">Generate Public Signal</Button>}
+                                                                        </TabsContent>
+                                                                    )}
                                                                 </Tabs>
                                                             </DialogContent>
                                                         </Dialog>
                                                     )}
                                                     
-                                                    {d.user_permission === 'owner' && (
-                                                        <Button variant="outline" size="icon" className="h-8 w-8 rounded-lg border-2 text-red-500" onClick={() => handleDeleteDoc(d.id)} title="Delete"><Trash2 size={14}/></Button>
+                                                    {item.user_permission === 'owner' && (
+                                                        <Button variant="outline" size="icon" className="h-8 w-8 rounded-lg border-2 text-red-500" onClick={() => item.isFolder ? handleDeleteFolder(item.id) : handleDeleteDoc(item.id)} title="Delete"><Trash2 size={14}/></Button>
                                                     )}
                                                 </>
                                             )}
@@ -474,6 +484,23 @@ export default function DocumentExplorerPage() {
                             ))}
                         </TableBody>
                     </Table>
+
+                    <div className="bg-slate-50 border-t-2 border-slate-100 p-6 flex justify-between items-center">
+                        <div className="flex items-center gap-4">
+                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Show:</span>
+                            <div className="flex gap-1">
+                                {[20, 50, 100].map(sz => (
+                                    <Button key={sz} variant={pageSize === sz ? "default" : "outline"} size="sm" className="h-8 w-10 font-black text-[10px] rounded-lg" onClick={() => {setPageSize(sz); setOffset(0);}}>{sz}</Button>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="flex items-center gap-3">
+                            <Button variant="outline" size="sm" className="font-black text-[10px] rounded-xl border-2 px-6 h-10" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - pageSize))}>PREV</Button>
+                            <div className="bg-white border-2 border-slate-200 px-4 h-10 flex items-center rounded-xl font-black text-[10px] tracking-widest text-slate-600 italic">PAGE_{Math.floor(offset / pageSize) + 1}</div>
+                            <Button variant="outline" size="sm" className="font-black text-[10px] rounded-xl border-2 px-6 h-10" disabled={combinedItems.length < pageSize} onClick={() => setOffset(offset + pageSize)}>NEXT</Button>
+                        </div>
+                    </div>
                 </CardContent>
             </Card>
           </Tabs>

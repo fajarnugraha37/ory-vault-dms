@@ -158,6 +158,14 @@ func (h *DocumentHandler) UploadDocument(w http.ResponseWriter, r *http.Request)
 func (h *DocumentHandler) ListDocuments(w http.ResponseWriter, r *http.Request) {
 	userID := r.Context().Value(middleware.UserIDKey).(string)
 	folderIDParam := r.URL.Query().Get("folder_id")
+	sortBy := r.URL.Query().Get("sort_by")
+	sortOrder := r.URL.Query().Get("sort_order")
+
+	// Strict Pagination Guardrails
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	if limit <= 0 || limit > 100 { limit = 50 }
+	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+	if offset < 0 { offset = 0 }
 
 	var docs []store.Document
 
@@ -188,7 +196,7 @@ func (h *DocumentHandler) ListDocuments(w http.ResponseWriter, r *http.Request) 
 		}
 
 		// 2. Fetch all documents in this folder
-		docs, err = h.Store.ListDocumentsByFolder(r.Context(), folderIDParam)
+		docs, err = h.Store.ListDocumentsByFolder(r.Context(), folderIDParam, sortBy, sortOrder, limit, offset)
 		if err != nil {
 			h.respondWithError(w, http.StatusInternalServerError, "Failed to list documents")
 			return
@@ -205,7 +213,7 @@ func (h *DocumentHandler) ListDocuments(w http.ResponseWriter, r *http.Request) 
 	} else {
 		// ROOT listing
 		// 1. Fetch owned documents
-		ownedDocs, err := h.Store.ListDocuments(r.Context(), userID, nil)
+		ownedDocs, err := h.Store.ListDocuments(r.Context(), userID, nil, sortBy, sortOrder, limit, offset)
 		if err != nil {
 			h.respondWithError(w, http.StatusInternalServerError, "Failed to list owned documents")
 			return
@@ -227,7 +235,7 @@ func (h *DocumentHandler) ListDocuments(w http.ResponseWriter, r *http.Request) 
 			idToRelation[rel.Object] = rel.Relation
 		}
 
-		sharedDocs, _ := h.Store.ListDocumentsFiltered(r.Context(), permittedIDs, 100, 0)
+		sharedDocs, _ := h.Store.ListDocumentsFiltered(r.Context(), permittedIDs, sortBy, sortOrder, limit, offset)
 		for i := range sharedDocs {
 			sharedDocs[i].UserPermission = idToRelation[sharedDocs[i].ID]
 		}
@@ -321,10 +329,10 @@ func (h *DocumentHandler) DeleteDocument(w http.ResponseWriter, r *http.Request)
 	docID := chi.URLParam(r, "id")
 	userID := r.Context().Value(middleware.UserIDKey).(string)
 
-	// SECURITY: Verify DELETE access via Keto (using 'edit' relation for now as proxy for management)
-	allowed, err := h.Keto.CheckPermission(r.Context(), "Document", docID, "edit", userID)
+	// SECURITY: Only owner can delete documents (destructive)
+	allowed, err := h.Keto.CheckPermission(r.Context(), "Document", docID, "owner", userID)
 	if err != nil || !allowed {
-		h.respondWithError(w, http.StatusForbidden, "No permission to delete this document")
+		h.respondWithError(w, http.StatusForbidden, "Only the owner can delete this document")
 		return
 	}
 
@@ -337,11 +345,10 @@ func (h *DocumentHandler) DeleteDocument(w http.ResponseWriter, r *http.Request)
 	// 1. Delete from MinIO
 	if err := h.Storage.DeleteObject(r.Context(), doc.StoragePath); err != nil {
 		log.Printf("STORAGE_ERROR: Failed to delete from MinIO: %v", err)
-		h.respondWithError(w, http.StatusInternalServerError, "Failed to delete file from storage")
-		return
+		// We continue to ensure DB is cleaned up even if storage fails
 	}
 
-	// 2. Delete metadata
+	// 2. Delete metadata from DB
 	if err := h.Store.DeleteDocument(r.Context(), docID); err != nil {
 		h.respondWithError(w, http.StatusInternalServerError, "Failed to delete metadata")
 		return
@@ -349,6 +356,9 @@ func (h *DocumentHandler) DeleteDocument(w http.ResponseWriter, r *http.Request)
 
 	// 3. Cleanup Keto
 	_ = h.Keto.DeleteRelationship(r.Context(), "Document", docID, "owner", userID)
+	if doc.FolderID != nil {
+		_ = h.Keto.DeleteRelationship(r.Context(), "Document", docID, "parent", *doc.FolderID)
+	}
 
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -453,7 +463,8 @@ func (h *DocumentHandler) ListDocumentAccess(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	identities, _, _ := h.Kratos.ListIdentities(r.Context(), 1000, "")
+	// Kratos ListIdentities already has a limit
+	identities, _, _ := h.Kratos.ListIdentities(r.Context(), 100, "")
 	idToEmail := make(map[string]string)
 	for _, id := range identities {
 		traits, ok := id.Traits.(map[string]interface{})
@@ -508,10 +519,10 @@ func (h *DocumentHandler) MoveDocument(w http.ResponseWriter, r *http.Request) {
 	docID := chi.URLParam(r, "id")
 	userID := r.Context().Value(middleware.UserIDKey).(string)
 
-	// SECURITY: Verify edit access
-	allowed, err := h.Keto.CheckPermission(r.Context(), "Document", docID, "edit", userID)
+	// SECURITY: Only OWNER can move documents (changes parent relation)
+	allowed, err := h.Keto.CheckPermission(r.Context(), "Document", docID, "owner", userID)
 	if err != nil || !allowed {
-		h.respondWithError(w, http.StatusForbidden, "No permission to move document")
+		h.respondWithError(w, http.StatusForbidden, "Only the owner can move this document")
 		return
 	}
 

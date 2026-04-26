@@ -1,26 +1,30 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 	"net/http"
+	"strconv"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/nugra/ory-vault/dms-backend/internal/keto"
 	"github.com/nugra/ory-vault/dms-backend/internal/kratos"
 	"github.com/nugra/ory-vault/dms-backend/internal/middleware"
+	"github.com/nugra/ory-vault/dms-backend/internal/storage"
 	"github.com/nugra/ory-vault/dms-backend/internal/store"
 )
 
 type FolderHandler struct {
-	Store  *store.Store
-	Keto   *keto.Client
-	Kratos *kratos.Client
+	Store   *store.Store
+	Storage *storage.Storage
+	Keto    *keto.Client
+	Kratos  *kratos.Client
 }
 
-func NewFolderHandler(s *store.Store, kc *keto.Client, k *kratos.Client) *FolderHandler {
-	return &FolderHandler{Store: s, Keto: kc, Kratos: k}
+func NewFolderHandler(s *store.Store, st *storage.Storage, kc *keto.Client, k *kratos.Client) *FolderHandler {
+	return &FolderHandler{Store: s, Storage: st, Keto: kc, Kratos: k}
 }
 
 func (h *FolderHandler) respondWithError(w http.ResponseWriter, code int, message string) {
@@ -77,6 +81,14 @@ func (h *FolderHandler) CreateFolder(w http.ResponseWriter, r *http.Request) {
 func (h *FolderHandler) ListFolders(w http.ResponseWriter, r *http.Request) {
 	userID := r.Context().Value(middleware.UserIDKey).(string)
 	parentIDParam := r.URL.Query().Get("parent_id")
+	sortBy := r.URL.Query().Get("sort_by")
+	sortOrder := r.URL.Query().Get("sort_order")
+
+	// Strict Pagination Guardrails
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	if limit <= 0 || limit > 100 { limit = 50 }
+	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+	if offset < 0 { offset = 0 }
 
 	var folders []store.Folder
 
@@ -109,7 +121,7 @@ func (h *FolderHandler) ListFolders(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// 2. Fetch all folders in this parent
-		folders, err = h.Store.ListFoldersByParent(r.Context(), parentIDParam)
+		folders, err = h.Store.ListFoldersByParent(r.Context(), parentIDParam, sortBy, sortOrder, limit, offset)
 		if err != nil {
 			h.respondWithError(w, http.StatusInternalServerError, "Failed to list folders")
 			return
@@ -126,7 +138,7 @@ func (h *FolderHandler) ListFolders(w http.ResponseWriter, r *http.Request) {
 	} else {
 		// ROOT listing
 		// 1. Fetch owned folders
-		ownedFolders, err := h.Store.ListFolders(r.Context(), userID, nil)
+		ownedFolders, err := h.Store.ListFolders(r.Context(), userID, nil, sortBy, sortOrder, limit, offset)
 		if err != nil {
 			h.respondWithError(w, http.StatusInternalServerError, "Failed to list owned folders")
 			return
@@ -148,7 +160,7 @@ func (h *FolderHandler) ListFolders(w http.ResponseWriter, r *http.Request) {
 			idToRelation[rel.Object] = rel.Relation
 		}
 
-		sharedFolders, _ := h.Store.ListFoldersFiltered(r.Context(), permittedIDs, 100, 0)
+		sharedFolders, _ := h.Store.ListFoldersFiltered(r.Context(), permittedIDs, sortBy, sortOrder, 100, 0)
 		for i := range sharedFolders {
 			sharedFolders[i].UserPermission = idToRelation[sharedFolders[i].ID]
 		}
@@ -183,18 +195,46 @@ func (h *FolderHandler) DeleteFolder(w http.ResponseWriter, r *http.Request) {
 	folderID := chi.URLParam(r, "id")
 	userID := r.Context().Value(middleware.UserIDKey).(string)
 
-	// SECURITY: Verify management permission
-	allowed, err := h.Keto.CheckPermission(r.Context(), "Folder", folderID, "edit", userID)
+	// SECURITY: Only owner can delete folders (recursive deletion is destructive)
+	allowed, err := h.Keto.CheckPermission(r.Context(), "Folder", folderID, "owner", userID)
 	if err != nil || !allowed {
-		h.respondWithError(w, http.StatusForbidden, "No permission to delete folder")
+		h.respondWithError(w, http.StatusForbidden, "Only the owner can delete this folder")
 		return
 	}
 
+	// 1. Recursively find all documents in this folder and its subfolders
+	// For a production system, we'd use a CTE or a recursive function.
+	// For this lab, we'll perform a depth-first search to cleanup storage.
+	if err := h.cleanupFolderStorage(r.Context(), folderID); err != nil {
+		log.Printf("CLEANUP_ERROR: %v", err)
+		// We continue anyway to try and delete what we can from DB
+	}
+
 	if err := h.Store.DeleteFolder(r.Context(), folderID); err != nil {
-		h.respondWithError(w, http.StatusInternalServerError, "Failed to delete folder")
+		h.respondWithError(w, http.StatusInternalServerError, "Failed to delete folder from database")
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *FolderHandler) cleanupFolderStorage(ctx context.Context, folderID string) error {
+	// Delete documents in THIS folder (large limit to ensure all deleted)
+	docs, err := h.Store.ListDocumentsByFolder(ctx, folderID, "name", "asc", 1000000, 0)
+	if err == nil {
+		for _, d := range docs {
+			_ = h.Storage.DeleteObject(ctx, d.StoragePath)
+			_ = h.Keto.DeleteRelationship(ctx, "Document", d.ID, "owner", d.OwnerID)
+		}
+	}
+
+	// Recurse into subfolders
+	subfolders, err := h.Store.ListFoldersByParent(ctx, folderID, "name", "asc", 1000000, 0)
+	if err == nil {
+		for _, f := range subfolders {
+			_ = h.cleanupFolderStorage(ctx, f.ID)
+		}
+	}
+	return nil
 }
 
 func (h *FolderHandler) RenameFolder(w http.ResponseWriter, r *http.Request) {

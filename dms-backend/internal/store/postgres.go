@@ -189,17 +189,22 @@ func (s *Store) CreateFolder(ctx context.Context, f *Folder) error {
 	return err
 }
 
-func (s *Store) ListFolders(ctx context.Context, ownerID string, parentID *string) ([]Folder, error) {
+func (s *Store) ListFolders(ctx context.Context, ownerID string, parentID *string, sortBy, sortOrder string, limit, offset int) ([]Folder, error) {
+	validSortFields := map[string]string{"name": "name", "date": "created_at"}
+	field, ok := validSortFields[sortBy]
+	if !ok { field = "created_at" }
+	if strings.ToUpper(sortOrder) != "ASC" { sortOrder = "DESC" }
+
 	query := `SELECT id, name, parent_id, owner_id, created_at, updated_at FROM app.folders WHERE owner_id = $1`
 	var rows *sql.Rows
 	var err error
 	
 	if parentID == nil {
-		query += ` AND parent_id IS NULL ORDER BY created_at DESC`
-		rows, err = s.db.QueryContext(ctx, query, ownerID)
+		query += ` AND parent_id IS NULL ORDER BY ` + field + ` ` + sortOrder + ` LIMIT $2 OFFSET $3`
+		rows, err = s.db.QueryContext(ctx, query, ownerID, limit, offset)
 	} else {
-		query += ` AND parent_id = $2 ORDER BY created_at DESC`
-		rows, err = s.db.QueryContext(ctx, query, ownerID, parentID)
+		query += ` AND parent_id = $2 ORDER BY ` + field + ` ` + sortOrder + ` LIMIT $3 OFFSET $4`
+		rows, err = s.db.QueryContext(ctx, query, ownerID, parentID, limit, offset)
 	}
 	
 	if err != nil {
@@ -218,9 +223,14 @@ func (s *Store) ListFolders(ctx context.Context, ownerID string, parentID *strin
 	return folders, nil
 }
 
-func (s *Store) ListFoldersByParent(ctx context.Context, parentID string) ([]Folder, error) {
-	query := `SELECT id, name, parent_id, owner_id, created_at, updated_at FROM app.folders WHERE parent_id = $1 ORDER BY created_at DESC`
-	rows, err := s.db.QueryContext(ctx, query, parentID)
+func (s *Store) ListFoldersByParent(ctx context.Context, parentID string, sortBy, sortOrder string, limit, offset int) ([]Folder, error) {
+	validSortFields := map[string]string{"name": "name", "date": "created_at"}
+	field, ok := validSortFields[sortBy]
+	if !ok { field = "created_at" }
+	if strings.ToUpper(sortOrder) != "ASC" { sortOrder = "DESC" }
+
+	query := `SELECT id, name, parent_id, owner_id, created_at, updated_at FROM app.folders WHERE parent_id = $1 ORDER BY ` + field + ` ` + sortOrder + ` LIMIT $2 OFFSET $3`
+	rows, err := s.db.QueryContext(ctx, query, parentID, limit, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -259,10 +269,15 @@ func (s *Store) DeleteFolder(ctx context.Context, id string) error {
 	return err
 }
 
-func (s *Store) ListFoldersFiltered(ctx context.Context, permittedFolderIDs []string, limit, offset int) ([]Folder, error) {
+func (s *Store) ListFoldersFiltered(ctx context.Context, permittedFolderIDs []string, sortBy, sortOrder string, limit, offset int) ([]Folder, error) {
 	if len(permittedFolderIDs) == 0 {
 		return []Folder{}, nil
 	}
+
+	validSortFields := map[string]string{"name": "name", "date": "created_at"}
+	field, ok := validSortFields[sortBy]
+	if !ok { field = "created_at" }
+	if strings.ToUpper(sortOrder) != "ASC" { sortOrder = "DESC" }
 
 	var placeholders []string
 	var args []interface{}
@@ -275,7 +290,7 @@ func (s *Store) ListFoldersFiltered(ctx context.Context, permittedFolderIDs []st
 		SELECT id, name, parent_id, owner_id, created_at, updated_at
 		FROM app.folders 
 		WHERE id IN (` + strings.Join(placeholders, ",") + `)
-		ORDER BY created_at DESC LIMIT $` + strconv.Itoa(len(args)+1) + ` OFFSET $` + strconv.Itoa(len(args)+2) + `
+		ORDER BY ` + field + ` ` + sortOrder + ` LIMIT $` + strconv.Itoa(len(args)+1) + ` OFFSET $` + strconv.Itoa(len(args)+2) + `
 	`
 	
 	args = append(args, limit, offset)
@@ -395,26 +410,15 @@ func (s *Store) RevokePublicLink(ctx context.Context, docID string) error {
 	return err
 }
 
-func (s *Store) ListDocumentsFiltered(ctx context.Context, permittedDocIDs []string, limit, offset int) ([]Document, error) {
+func (s *Store) ListDocumentsFiltered(ctx context.Context, permittedDocIDs []string, sortBy, sortOrder string, limit, offset int) ([]Document, error) {
 	if len(permittedDocIDs) == 0 {
 		return []Document{}, nil
 	}
 	
-	// Import "github.com/lib/pq" is assumed to be available
-	query := `
-		SELECT id, name, folder_id, owner_id, mime_type, size_bytes, storage_path, version, public_link_token, created_at, updated_at
-		FROM app.documents 
-		WHERE id = ANY($1)
-		ORDER BY created_at DESC LIMIT $2 OFFSET $3
-	`
-	// Fallback to basic string slice to Postgres array conversion using pq.Array
-	// This requires importing "github.com/lib/pq" as normal import, not just `_`
-	// Since we can't easily change the import here without knowing exactly how it's formatted, 
-	// we will manually construct the parameter string for the ANY clause to avoid breaking imports.
-	
-	if len(permittedDocIDs) == 0 {
-		return []Document{}, nil
-	}
+	validSortFields := map[string]string{"name": "name", "date": "created_at", "type": "mime_type", "size": "size_bytes"}
+	field, ok := validSortFields[sortBy]
+	if !ok { field = "created_at" }
+	if strings.ToUpper(sortOrder) != "ASC" { sortOrder = "DESC" }
 
 	var placeholders []string
 	var args []interface{}
@@ -423,11 +427,11 @@ func (s *Store) ListDocumentsFiltered(ctx context.Context, permittedDocIDs []str
 		args = append(args, id)
 	}
 
-	query = `
+	query := `
 		SELECT id, name, folder_id, owner_id, mime_type, size_bytes, storage_path, version, public_link_token, created_at, updated_at
 		FROM app.documents 
 		WHERE id IN (` + strings.Join(placeholders, ",") + `)
-		ORDER BY created_at DESC LIMIT $` + strconv.Itoa(len(args)+1) + ` OFFSET $` + strconv.Itoa(len(args)+2) + `
+		ORDER BY ` + field + ` ` + sortOrder + ` LIMIT $` + strconv.Itoa(len(args)+1) + ` OFFSET $` + strconv.Itoa(len(args)+2) + `
 	`
 	
 	args = append(args, limit, offset)
@@ -449,8 +453,12 @@ func (s *Store) ListDocumentsFiltered(ctx context.Context, permittedDocIDs []str
 	return docs, nil
 }
 
-func (s *Store) ListDocuments(ctx context.Context, ownerID string, folderID *string) ([]Document, error) {
-	// Simple listing for the owner. Shared docs will be handled via Keto.
+func (s *Store) ListDocuments(ctx context.Context, ownerID string, folderID *string, sortBy, sortOrder string, limit, offset int) ([]Document, error) {
+	validSortFields := map[string]string{"name": "name", "date": "created_at", "type": "mime_type", "size": "size_bytes"}
+	field, ok := validSortFields[sortBy]
+	if !ok { field = "created_at" }
+	if strings.ToUpper(sortOrder) != "ASC" { sortOrder = "DESC" }
+
 	query := `
 		SELECT id, name, folder_id, owner_id, mime_type, size_bytes, storage_path, version, public_link_token, created_at, updated_at
 		FROM app.documents WHERE owner_id = $1
@@ -459,11 +467,11 @@ func (s *Store) ListDocuments(ctx context.Context, ownerID string, folderID *str
 	var err error
 	
 	if folderID == nil {
-		query += ` AND folder_id IS NULL ORDER BY created_at DESC`
-		rows, err = s.db.QueryContext(ctx, query, ownerID)
+		query += ` AND folder_id IS NULL ORDER BY ` + field + ` ` + sortOrder + ` LIMIT $2 OFFSET $3`
+		rows, err = s.db.QueryContext(ctx, query, ownerID, limit, offset)
 	} else {
-		query += ` AND folder_id = $2 ORDER BY created_at DESC`
-		rows, err = s.db.QueryContext(ctx, query, ownerID, folderID)
+		query += ` AND folder_id = $2 ORDER BY ` + field + ` ` + sortOrder + ` LIMIT $3 OFFSET $4`
+		rows, err = s.db.QueryContext(ctx, query, ownerID, folderID, limit, offset)
 	}
 	
 	if err != nil {
@@ -482,12 +490,16 @@ func (s *Store) ListDocuments(ctx context.Context, ownerID string, folderID *str
 	return docs, nil
 }
 
-func (s *Store) ListDocumentsByFolder(ctx context.Context, folderID string) ([]Document, error) {
+func (s *Store) ListDocumentsByFolder(ctx context.Context, folderID string, sortBy, sortOrder string, limit, offset int) ([]Document, error) {
+	validSortFields := map[string]string{"name": "name", "date": "created_at", "type": "mime_type", "size": "size_bytes"}
+	field, ok := validSortFields[sortBy]
+	if !ok { field = "created_at" }
+	if strings.ToUpper(sortOrder) != "ASC" { sortOrder = "DESC" }
+
 	query := `
 		SELECT id, name, folder_id, owner_id, mime_type, size_bytes, storage_path, version, public_link_token, created_at, updated_at
-		FROM app.documents WHERE folder_id = $1 ORDER BY created_at DESC
-	`
-	rows, err := s.db.QueryContext(ctx, query, folderID)
+		FROM app.documents WHERE folder_id = $1 ORDER BY ` + field + ` ` + sortOrder + ` LIMIT $2 OFFSET $3`
+	rows, err := s.db.QueryContext(ctx, query, folderID, limit, offset)
 	if err != nil {
 		return nil, err
 	}
