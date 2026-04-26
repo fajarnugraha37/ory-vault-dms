@@ -77,68 +77,106 @@ func (h *FolderHandler) CreateFolder(w http.ResponseWriter, r *http.Request) {
 func (h *FolderHandler) ListFolders(w http.ResponseWriter, r *http.Request) {
 	userID := r.Context().Value(middleware.UserIDKey).(string)
 	parentIDParam := r.URL.Query().Get("parent_id")
-	var parentID *string
+
+	var folders []store.Folder
+
 	if parentIDParam != "" {
-		parentID = &parentIDParam
-	}
+		// 1. Check access to the parent folder
+		// Check owner first
+		parent, err := h.Store.GetFolder(r.Context(), parentIDParam)
+		if err != nil {
+			h.respondWithError(w, http.StatusNotFound, "Parent folder not found")
+			return
+		}
 
-	// 1. Fetch owned folders
-	ownedFolders, err := h.Store.ListFolders(r.Context(), userID, parentID)
-	if err != nil {
-		h.respondWithError(w, http.StatusInternalServerError, "Failed to list folders")
-		return
-	}
-
-	// 2. Fetch all direct relationships for this user in Keto
-	relations, err := h.Keto.ListRelationships(r.Context(), "Folder", "", userID)
-	if err != nil {
-		log.Printf("KETO_ERROR: Failed to check folder access: %v", err)
-	}
-
-	accessibleFolderIDs := make(map[string]bool)
-	for _, rel := range relations {
-		accessibleFolderIDs[rel.Object] = true
-	}
-
-	var permittedIDs []string
-	for id := range accessibleFolderIDs {
-		permittedIDs = append(permittedIDs, id)
-	}
-
-	sharedFolders, err := h.Store.ListFoldersFiltered(r.Context(), permittedIDs, 100, 0)
-	if err != nil {
-		log.Printf("DB_WARN: Failed to list filtered folders: %v", err)
-	}
-
-	// Merge unique
-	folderSet := make(map[string]store.Folder)
-	for _, f := range ownedFolders {
-		folderSet[f.ID] = f
-	}
-	for _, f := range sharedFolders {
-		// Logic: If user is at ROOT, show shared folders that are either in ROOT
-		// or shared directly to the user (even if they live in a parent folder the user doesn't see).
-		if parentID != nil {
-			if f.ParentID == nil || *f.ParentID != *parentID {
-				continue
-			}
+		var role string
+		if parent.OwnerID == userID {
+			role = "owner"
 		} else {
-			// At Root: include if folder is in root OR if it's NOT owned by the user
-			// (shared folders appear at root if the parent structure is inaccessible).
-			if f.ParentID != nil && f.OwnerID == userID {
-				continue
+			// Check Keto for inherited or direct permission
+			isEditor, _ := h.Keto.CheckPermission(r.Context(), "Folder", parentIDParam, "edit", userID)
+			if isEditor {
+				role = "editor"
+			} else {
+				isViewer, _ := h.Keto.CheckPermission(r.Context(), "Folder", parentIDParam, "view", userID)
+				if isViewer {
+					role = "viewer"
+				} else {
+					h.respondWithError(w, http.StatusForbidden, "Access denied to folder")
+					return
+				}
 			}
 		}
-		folderSet[f.ID] = f
-	}
 
-	var finalFolders []store.Folder
-	for _, f := range folderSet {
-		finalFolders = append(finalFolders, f)
+		// 2. Fetch all folders in this parent
+		folders, err = h.Store.ListFoldersByParent(r.Context(), parentIDParam)
+		if err != nil {
+			h.respondWithError(w, http.StatusInternalServerError, "Failed to list folders")
+			return
+		}
+
+		// 3. Enrich with inherited role
+		for i := range folders {
+			if folders[i].OwnerID == userID {
+				folders[i].UserPermission = "owner"
+			} else {
+				folders[i].UserPermission = role
+			}
+		}
+	} else {
+		// ROOT listing
+		// 1. Fetch owned folders
+		ownedFolders, err := h.Store.ListFolders(r.Context(), userID, nil)
+		if err != nil {
+			h.respondWithError(w, http.StatusInternalServerError, "Failed to list owned folders")
+			return
+		}
+		for i := range ownedFolders {
+			ownedFolders[i].UserPermission = "owner"
+		}
+
+		// 2. Fetch directly shared folders
+		relations, err := h.Keto.ListRelationships(r.Context(), "Folder", "", userID)
+		if err != nil {
+			log.Printf("KETO_ERROR: %v", err)
+		}
+
+		var permittedIDs []string
+		idToRelation := make(map[string]string)
+		for _, rel := range relations {
+			permittedIDs = append(permittedIDs, rel.Object)
+			idToRelation[rel.Object] = rel.Relation
+		}
+
+		sharedFolders, _ := h.Store.ListFoldersFiltered(r.Context(), permittedIDs, 100, 0)
+		for i := range sharedFolders {
+			sharedFolders[i].UserPermission = idToRelation[sharedFolders[i].ID]
+		}
+
+		// Merge
+		folderSet := make(map[string]store.Folder)
+		for _, f := range ownedFolders {
+			folderSet[f.ID] = f
+		}
+		for _, f := range sharedFolders {
+			// In Root, we only show shared folders that don't have a parent
+			// OR if their parent is NOT accessible to the user (orphaned view).
+			// For simplicity, we just check if it's already in the set.
+			if _, exists := folderSet[f.ID]; !exists {
+				folderSet[f.ID] = f
+			}
+		}
+
+		for _, f := range folderSet {
+			// Only show if at root
+			if f.ParentID == nil || f.UserPermission != "owner" {
+				folders = append(folders, f)
+			}
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(finalFolders)
+	json.NewEncoder(w).Encode(folders)
 }
 
 func (h *FolderHandler) DeleteFolder(w http.ResponseWriter, r *http.Request) {

@@ -155,69 +155,100 @@ func (h *DocumentHandler) UploadDocument(w http.ResponseWriter, r *http.Request)
 func (h *DocumentHandler) ListDocuments(w http.ResponseWriter, r *http.Request) {
 	userID := r.Context().Value(middleware.UserIDKey).(string)
 	folderIDParam := r.URL.Query().Get("folder_id")
-	var folderID *string
+
+	var docs []store.Document
+
 	if folderIDParam != "" {
-		folderID = &folderIDParam
-	}
+		// 1. Check access to the parent folder
+		parent, err := h.Store.GetFolder(r.Context(), folderIDParam)
+		if err != nil {
+			h.respondWithError(w, http.StatusNotFound, "Folder not found")
+			return
+		}
 
-	// 1. Fetch all direct relationships for this user in Keto
-	relations, err := h.Keto.ListRelationships(r.Context(), "Document", "", userID)
-	if err != nil {
-		log.Printf("KETO_ERROR: Failed to list relationships: %v", err)
-		h.respondWithError(w, http.StatusInternalServerError, "Failed to check access")
-		return
-	}
-
-	accessibleDocs := make(map[string]bool)
-	for _, rel := range relations {
-		accessibleDocs[rel.Object] = true
-	}
-
-	var permittedIDs []string
-	for id := range accessibleDocs {
-		permittedIDs = append(permittedIDs, id)
-	}
-
-	// 2. Fetch owned documents from DB
-	ownedDocs, err := h.Store.ListDocuments(r.Context(), userID, folderID)
-	if err != nil {
-		h.respondWithError(w, http.StatusInternalServerError, "Failed to list documents")
-		return
-	}
-
-	// 3. Fetch shared documents from DB
-	sharedDocs, err := h.Store.ListDocumentsFiltered(r.Context(), permittedIDs, 100, 0)
-	if err != nil {
-		log.Printf("DB_WARN: Failed to fetch shared docs: %v", err)
-	}
-
-	docSet := make(map[string]store.Document)
-	for _, d := range ownedDocs {
-		docSet[d.ID] = d
-	}
-	for _, d := range sharedDocs {
-		// Logic: If user is at ROOT, show shared files that are either in ROOT
-		// or shared directly to the user (even if they live in a folder the user doesn't see).
-		if folderID != nil {
-			if d.FolderID == nil || *d.FolderID != *folderID {
-				continue
-			}
+		var role string
+		if parent.OwnerID == userID {
+			role = "owner"
 		} else {
-			// At Root: include if doc is in root OR if it's NOT owned by the user
-			// (shared files appear at root if the folder structure is inaccessible).
-			if d.FolderID != nil && d.OwnerID == userID {
-				continue
+			isEditor, _ := h.Keto.CheckPermission(r.Context(), "Folder", folderIDParam, "edit", userID)
+			if isEditor {
+				role = "editor"
+			} else {
+				isViewer, _ := h.Keto.CheckPermission(r.Context(), "Folder", folderIDParam, "view", userID)
+				if isViewer {
+					role = "viewer"
+				} else {
+					h.respondWithError(w, http.StatusForbidden, "Access denied to folder")
+					return
+				}
 			}
 		}
-		docSet[d.ID] = d
+
+		// 2. Fetch all documents in this folder
+		docs, err = h.Store.ListDocumentsByFolder(r.Context(), folderIDParam)
+		if err != nil {
+			h.respondWithError(w, http.StatusInternalServerError, "Failed to list documents")
+			return
+		}
+
+		// 3. Enrich with inherited role
+		for i := range docs {
+			if docs[i].OwnerID == userID {
+				docs[i].UserPermission = "owner"
+			} else {
+				docs[i].UserPermission = role
+			}
+		}
+	} else {
+		// ROOT listing
+		// 1. Fetch owned documents
+		ownedDocs, err := h.Store.ListDocuments(r.Context(), userID, nil)
+		if err != nil {
+			h.respondWithError(w, http.StatusInternalServerError, "Failed to list owned documents")
+			return
+		}
+		for i := range ownedDocs {
+			ownedDocs[i].UserPermission = "owner"
+		}
+
+		// 2. Fetch directly shared documents
+		relations, err := h.Keto.ListRelationships(r.Context(), "Document", "", userID)
+		if err != nil {
+			log.Printf("KETO_ERROR: %v", err)
+		}
+
+		var permittedIDs []string
+		idToRelation := make(map[string]string)
+		for _, rel := range relations {
+			permittedIDs = append(permittedIDs, rel.Object)
+			idToRelation[rel.Object] = rel.Relation
+		}
+
+		sharedDocs, _ := h.Store.ListDocumentsFiltered(r.Context(), permittedIDs, 100, 0)
+		for i := range sharedDocs {
+			sharedDocs[i].UserPermission = idToRelation[sharedDocs[i].ID]
+		}
+
+		// Merge
+		docSet := make(map[string]store.Document)
+		for _, d := range ownedDocs {
+			docSet[d.ID] = d
+		}
+		for _, d := range sharedDocs {
+			if _, exists := docSet[d.ID]; !exists {
+				docSet[d.ID] = d
+			}
+		}
+
+		for _, d := range docSet {
+			// Only show if at root
+			if d.FolderID == nil || d.UserPermission != "owner" {
+				docs = append(docs, d)
+			}
+		}
 	}
 
-	var finalDocs []store.Document
-	for _, d := range docSet {
-		finalDocs = append(finalDocs, d)
-	}
-
-	h.respondWithJSON(w, http.StatusOK, finalDocs)
+	h.respondWithJSON(w, http.StatusOK, docs)
 }
 
 // DownloadDocument streams the document from MinIO to the client.

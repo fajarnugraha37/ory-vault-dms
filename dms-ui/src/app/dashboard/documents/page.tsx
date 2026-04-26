@@ -67,6 +67,7 @@ interface Folder {
   name: string;
   parent_id: string | null;
   owner_id: string;
+  user_permission?: string;
   created_at: string;
 }
 
@@ -75,6 +76,7 @@ interface Document {
   name: string;
   folder_id: string | null;
   owner_id: string;
+  user_permission?: string;
   mime_type: string;
   size_bytes: number;
   version: number;
@@ -327,7 +329,7 @@ export default function DocumentExplorerPage() {
                                     <TableCell><Badge variant="outline" className="font-mono text-[9px] border-2">FOLDER</Badge></TableCell>
                                     <TableCell className="text-right pr-8" onClick={e => e.stopPropagation()}>
                                         <div className="flex justify-end gap-2">
-                                            {activeTab === "owned" && (
+                                            {(f.user_permission === 'owner' || f.user_permission === 'editor') && (
                                                 <>
                                                     <Dialog>
                                                         <DialogTrigger asChild><Button variant="outline" size="icon" className="h-8 w-8 rounded-lg border-2 text-slate-600" onClick={() => {setRenameObj({id: f.id, name: f.name, type: 'Folder'}); setNewName(f.name);}}><Edit2 size={14}/></Button></DialogTrigger>
@@ -338,39 +340,44 @@ export default function DocumentExplorerPage() {
                                                         </DialogContent>
                                                     </Dialog>
 
-                                                    <Dialog>
-                                                        <DialogTrigger asChild><Button variant="outline" size="icon" className="h-8 w-8 rounded-lg border-2 text-indigo-600" onClick={() => setShareObj({id: f.id, type: 'Folder'})}><Share2 size={14}/></Button></DialogTrigger>
-                                                        <DialogContent className="border-4 border-slate-900 rounded-[2rem]">
-                                                            <DialogHeader><DialogTitle className="font-black uppercase italic">Share Folder</DialogTitle></DialogHeader>
-                                                            <Tabs defaultValue="share">
-                                                                <TabsList className="w-full bg-slate-100 p-1 rounded-xl mb-4"><TabsTrigger value="share" className="w-1/2 rounded-lg font-black text-[10px]">SHARE</TabsTrigger><TabsTrigger value="access" className="w-1/2 rounded-lg font-black text-[10px]">ACCESS_LIST</TabsTrigger></TabsList>
-                                                                <TabsContent value="share" className="space-y-4">
-                                                                    <Input value={shareEmail} onChange={e => setShareEmail(e.target.value)} placeholder="Target Email" className="rounded-xl border-2 font-bold h-12" />
-                                                                    <div className="flex gap-2"><Button variant={shareRelation === 'viewer' ? 'default' : 'outline'} className="flex-1 rounded-xl font-black h-12" onClick={() => setShareRelation('viewer')}>VIEWER</Button><Button variant={shareRelation === 'editor' ? 'default' : 'outline'} className="flex-1 rounded-xl font-black h-12" onClick={() => setShareRelation('editor')}>EDITOR</Button></div>
-                                                                    <Button onClick={handleShare} className="w-full font-black py-6 rounded-xl bg-slate-900 text-white uppercase text-[10px] tracking-widest">Grant Access</Button>
-                                                                </TabsContent>
-                                                                <TabsContent value="access">
-                                                                    <ScrollArea className="h-48 border-2 rounded-xl p-2 bg-slate-50">
-                                                                        {accessList?.map(acc => (
-                                                                            <div key={acc.user_id} className="flex justify-between items-center p-3 bg-white border rounded-xl mb-2">
-                                                                                <div className="text-[10px] font-black">
-                                                                                    {acc.email || acc.user_id.substring(0,13) + "..."} 
-                                                                                    <Badge variant="secondary" className="ml-2 text-[8px] uppercase">{acc.relation}</Badge>
+                                                    {f.user_permission === 'owner' && (
+                                                        <Dialog>
+                                                            <DialogTrigger asChild><Button variant="outline" size="icon" className="h-8 w-8 rounded-lg border-2 text-indigo-600" onClick={() => setShareObj({id: f.id, type: 'Folder'})}><Share2 size={14}/></Button></DialogTrigger>
+                                                            <DialogContent className="border-4 border-slate-900 rounded-[2rem]">
+                                                                <DialogHeader><DialogTitle className="font-black uppercase italic">Share Folder</DialogTitle></DialogHeader>
+                                                                <Tabs defaultValue="share">
+                                                                    <TabsList className="w-full bg-slate-100 p-1 rounded-xl mb-4"><TabsTrigger value="share" className="w-1/2 rounded-lg font-black text-[10px]">SHARE</TabsTrigger><TabsTrigger value="access" className="w-1/2 rounded-lg font-black text-[10px]">ACCESS_LIST</TabsTrigger></TabsList>
+                                                                    <TabsContent value="share" className="space-y-4">
+                                                                        <Input value={shareEmail} onChange={e => setShareEmail(e.target.value)} placeholder="Target Email" className="rounded-xl border-2 font-bold h-12" />
+                                                                        <div className="flex gap-2"><Button variant={shareRelation === 'viewer' ? 'default' : 'outline'} className="flex-1 rounded-xl font-black h-12" onClick={() => setShareRelation('viewer')}>VIEWER</Button><Button variant={shareRelation === 'editor' ? 'default' : 'outline'} className="flex-1 rounded-xl font-black h-12" onClick={() => setShareRelation('editor')}>EDITOR</Button></div>
+                                                                        <Button onClick={handleShare} className="w-full font-black py-6 rounded-xl bg-slate-900 text-white uppercase text-[10px] tracking-widest">Grant Access</Button>
+                                                                    </TabsContent>
+                                                                    <TabsContent value="access">
+                                                                        <ScrollArea className="h-48 border-2 rounded-xl p-2 bg-slate-50">
+                                                                            {accessList?.map(acc => (
+                                                                                <div key={acc.user_id} className="flex justify-between items-center p-3 bg-white border rounded-xl mb-2">
+                                                                                    <div className="text-[10px] font-black">
+                                                                                        {acc.email || acc.user_id.substring(0,13) + "..."} 
+                                                                                        <Badge variant="secondary" className="ml-2 text-[8px] uppercase">{acc.relation}</Badge>
+                                                                                    </div>
+                                                                                    {acc.relation !== 'owner' && (
+                                                                                        <Button variant="ghost" size="icon" className="h-6 w-6 text-red-400 hover:text-red-600 hover:bg-red-50" onClick={() => handleRevoke(acc.user_id, acc.relation)}>
+                                                                                            <UserX size={12}/>
+                                                                                        </Button>
+                                                                                    )}
                                                                                 </div>
-                                                                                {acc.relation !== 'owner' && (
-                                                                                    <Button variant="ghost" size="icon" className="h-6 w-6 text-red-400 hover:text-red-600 hover:bg-red-50" onClick={() => handleRevoke(acc.user_id, acc.relation)}>
-                                                                                        <UserX size={12}/>
-                                                                                    </Button>
-                                                                                )}
-                                                                            </div>
-                                                                        ))}
-                                                                        {!accessList?.length && <div className="text-center py-8 text-slate-400 font-bold text-xs">NO_SHARED_USERS</div>}
-                                                                    </ScrollArea>
-                                                                </TabsContent>
-                                                            </Tabs>
-                                                        </DialogContent>
-                                                    </Dialog>
-                                                    <Button variant="outline" size="icon" className="h-8 w-8 rounded-lg border-2 text-red-500" onClick={() => handleDeleteFolder(f.id)}><Trash2 size={14}/></Button>
+                                                                            ))}
+                                                                            {!accessList?.length && <div className="text-center py-8 text-slate-400 font-bold text-xs">NO_SHARED_USERS</div>}
+                                                                        </ScrollArea>
+                                                                    </TabsContent>
+                                                                </Tabs>
+                                                            </DialogContent>
+                                                        </Dialog>
+                                                    )}
+                                                    
+                                                    {f.user_permission === 'owner' && (
+                                                        <Button variant="outline" size="icon" className="h-8 w-8 rounded-lg border-2 text-red-500" onClick={() => handleDeleteFolder(f.id)}><Trash2 size={14}/></Button>
+                                                    )}
                                                 </>
                                             )}
                                             <ChevronRight size={16} className="text-slate-300 ml-2" />
@@ -391,7 +398,7 @@ export default function DocumentExplorerPage() {
                                         <div className="flex justify-end gap-2">
                                             <Button variant="outline" size="icon" className="h-8 w-8 rounded-lg border-2 text-blue-600" onClick={() => handleDownload(d)} title="Download"><DownloadCloud size={14}/></Button>
                                             
-                                            {activeTab === "owned" && (
+                                            {(d.user_permission === 'owner' || d.user_permission === 'editor') && (
                                                 <>
                                                     <Button variant="outline" size="icon" className="h-8 w-8 rounded-lg border-2 text-slate-400" onClick={() => handleCopy(d.id)} title="Copy"><Copy size={14}/></Button>
 
@@ -413,47 +420,52 @@ export default function DocumentExplorerPage() {
                                                         </DialogContent>
                                                     </Dialog>
 
-                                                    <Dialog>
-                                                        <DialogTrigger asChild><Button variant="outline" size="icon" className="h-8 w-8 rounded-lg border-2 text-indigo-600" onClick={() => setShareObj({id: d.id, type: 'Document', token: d.public_link_token})} title="Share"><Share2 size={14}/></Button></DialogTrigger>
-                                                        <DialogContent className="border-4 border-slate-900 rounded-[2rem]">
-                                                            <Tabs defaultValue="share">
-                                                                <TabsList className="w-full bg-slate-100 p-1 rounded-xl mb-4"><TabsTrigger value="share" className="w-1/3 text-[9px] font-black">SHARE</TabsTrigger><TabsTrigger value="access" className="w-1/3 text-[9px] font-black">USERS</TabsTrigger><TabsTrigger value="public" className="w-1/3 text-[9px] font-black">PUBLIC</TabsTrigger></TabsList>
-                                                                <TabsContent value="share" className="space-y-4">
-                                                                    <Input value={shareEmail} onChange={e => setShareEmail(e.target.value)} placeholder="Email" className="rounded-xl h-12 border-2" />
-                                                                    <div className="flex gap-2"><Button variant={shareRelation === 'viewer' ? 'default' : 'outline'} className="flex-1 h-12 rounded-xl font-black" onClick={() => setShareRelation('viewer')}>VIEWER</Button><Button variant={shareRelation === 'editor' ? 'default' : 'outline'} className="flex-1 h-12 rounded-xl font-black" onClick={() => setShareRelation('editor')}>EDITOR</Button></div>
-                                                                    <Button onClick={handleShare} className="w-full h-12 rounded-xl font-black bg-slate-900 text-white uppercase text-[10px] tracking-widest">Grant Access</Button>
-                                                                </TabsContent>
-                                                                <TabsContent value="access">
-                                                                    <ScrollArea className="h-48 border-2 rounded-xl p-2 bg-slate-50">
-                                                                        {accessList?.map(acc => (
-                                                                            <div key={acc.user_id} className="flex justify-between items-center p-3 bg-white border rounded-xl mb-2">
-                                                                                <div className="text-[10px] font-black">
-                                                                                    {acc.email || acc.user_id.substring(0,13) + "..."} 
-                                                                                    <Badge variant="secondary" className="ml-2 text-[8px] uppercase">{acc.relation}</Badge>
+                                                    {d.user_permission === 'owner' && (
+                                                        <Dialog>
+                                                            <DialogTrigger asChild><Button variant="outline" size="icon" className="h-8 w-8 rounded-lg border-2 text-indigo-600" onClick={() => setShareObj({id: d.id, type: 'Document', token: d.public_link_token})} title="Share"><Share2 size={14}/></Button></DialogTrigger>
+                                                            <DialogContent className="border-4 border-slate-900 rounded-[2rem]">
+                                                                <Tabs defaultValue="share">
+                                                                    <TabsList className="w-full bg-slate-100 p-1 rounded-xl mb-4"><TabsTrigger value="share" className="w-1/3 text-[9px] font-black">SHARE</TabsTrigger><TabsTrigger value="access" className="w-1/3 text-[9px] font-black">USERS</TabsTrigger><TabsTrigger value="public" className="w-1/3 text-[9px] font-black">PUBLIC</TabsTrigger></TabsList>
+                                                                    <TabsContent value="share" className="space-y-4">
+                                                                        <Input value={shareEmail} onChange={e => setShareEmail(e.target.value)} placeholder="Email" className="rounded-xl h-12 border-2" />
+                                                                        <div className="flex gap-2"><Button variant={shareRelation === 'viewer' ? 'default' : 'outline'} className="flex-1 h-12 rounded-xl font-black" onClick={() => setShareRelation('viewer')}>VIEWER</Button><Button variant={shareRelation === 'editor' ? 'default' : 'outline'} className="flex-1 h-12 rounded-xl font-black" onClick={() => setShareRelation('editor')}>EDITOR</Button></div>
+                                                                        <Button onClick={handleShare} className="w-full h-12 rounded-xl font-black bg-slate-900 text-white uppercase text-[10px] tracking-widest">Grant Access</Button>
+                                                                    </TabsContent>
+                                                                    <TabsContent value="access">
+                                                                        <ScrollArea className="h-48 border-2 rounded-xl p-2 bg-slate-50">
+                                                                            {accessList?.map(acc => (
+                                                                                <div key={acc.user_id} className="flex justify-between items-center p-3 bg-white border rounded-xl mb-2">
+                                                                                    <div className="text-[10px] font-black">
+                                                                                        {acc.email || acc.user_id.substring(0,13) + "..."} 
+                                                                                        <Badge variant="secondary" className="ml-2 text-[8px] uppercase">{acc.relation}</Badge>
+                                                                                    </div>
+                                                                                    {acc.relation !== 'owner' && (
+                                                                                        <Button variant="ghost" size="icon" className="h-6 w-6 text-red-400 hover:text-red-600 hover:bg-red-50" onClick={() => handleRevoke(acc.user_id, acc.relation)}>
+                                                                                            <UserX size={12}/>
+                                                                                        </Button>
+                                                                                    )}
                                                                                 </div>
-                                                                                {acc.relation !== 'owner' && (
-                                                                                    <Button variant="ghost" size="icon" className="h-6 w-6 text-red-400 hover:text-red-600 hover:bg-red-50" onClick={() => handleRevoke(acc.user_id, acc.relation)}>
-                                                                                        <UserX size={12}/>
-                                                                                    </Button>
-                                                                                )}
+                                                                            ))}
+                                                                            {!accessList?.length && <div className="text-center py-8 text-slate-400 font-bold text-xs">NO_SHARED_USERS</div>}
+                                                                        </ScrollArea>
+                                                                    </TabsContent>
+                                                                    <TabsContent value="public" className="space-y-4">
+                                                                        {shareObj?.token ? (
+                                                                            <div className="p-4 bg-green-50 border-2 border-green-200 rounded-2xl flex flex-col gap-3">
+                                                                                <div className="text-[10px] font-black text-green-700 uppercase">Active Public Signal</div>
+                                                                                <div className="bg-white border p-3 rounded-xl font-mono text-[9px] break-all">{`${window.location.origin}/public/${shareObj.token}`}</div>
+                                                                                <div className="flex gap-2"><Button size="sm" className="flex-1 bg-green-600 font-black h-10 text-[10px] rounded-xl text-white" onClick={() => {navigator.clipboard.writeText(`${window.location.origin}/public/${shareObj?.token}`); toast.success("Copied!");}}>COPY</Button><Button size="sm" variant="destructive" className="flex-1 font-black h-10 text-[10px] rounded-xl" onClick={handleRevokePublic}>REVOKE</Button></div>
                                                                             </div>
-                                                                        ))}
-                                                                        {!accessList?.length && <div className="text-center py-8 text-slate-400 font-bold text-xs">NO_SHARED_USERS</div>}
-                                                                    </ScrollArea>
-                                                                </TabsContent>
-                                                                <TabsContent value="public" className="space-y-4">
-                                                                    {shareObj?.token ? (
-                                                                        <div className="p-4 bg-green-50 border-2 border-green-200 rounded-2xl flex flex-col gap-3">
-                                                                            <div className="text-[10px] font-black text-green-700 uppercase">Active Public Signal</div>
-                                                                            <div className="bg-white border p-3 rounded-xl font-mono text-[9px] break-all">{`${window.location.origin}/public/${shareObj.token}`}</div>
-                                                                            <div className="flex gap-2"><Button size="sm" className="flex-1 bg-green-600 font-black h-10 text-[10px] rounded-xl text-white" onClick={() => {navigator.clipboard.writeText(`${window.location.origin}/public/${shareObj?.token}`); toast.success("Copied!");}}>COPY</Button><Button size="sm" variant="destructive" className="flex-1 font-black h-10 text-[10px] rounded-xl" onClick={handleRevokePublic}>REVOKE</Button></div>
-                                                                        </div>
-                                                                    ) : <Button onClick={handlePublicLink} className="w-full h-12 rounded-xl bg-slate-900 font-black text-white uppercase text-xs">Generate Public Signal</Button>}
-                                                                </TabsContent>
-                                                            </Tabs>
-                                                        </DialogContent>
-                                                    </Dialog>
-                                                    <Button variant="outline" size="icon" className="h-8 w-8 rounded-lg border-2 text-red-500" onClick={() => handleDeleteDoc(d.id)} title="Delete"><Trash2 size={14}/></Button>
+                                                                        ) : <Button onClick={handlePublicLink} className="w-full h-12 rounded-xl bg-slate-900 font-black text-white uppercase text-xs">Generate Public Signal</Button>}
+                                                                    </TabsContent>
+                                                                </Tabs>
+                                                            </DialogContent>
+                                                        </Dialog>
+                                                    )}
+                                                    
+                                                    {d.user_permission === 'owner' && (
+                                                        <Button variant="outline" size="icon" className="h-8 w-8 rounded-lg border-2 text-red-500" onClick={() => handleDeleteDoc(d.id)} title="Delete"><Trash2 size={14}/></Button>
+                                                    )}
                                                 </>
                                             )}
                                         </div>

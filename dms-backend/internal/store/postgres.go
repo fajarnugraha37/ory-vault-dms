@@ -147,12 +147,13 @@ func (s *Store) Close() error {
 // --- DMS: Documents & Folders ---
 
 type Folder struct {
-	ID        string  `json:"id"`
-	Name      string  `json:"name"`
-	ParentID  *string `json:"parent_id"`
-	OwnerID   string  `json:"owner_id"`
-	CreatedAt string  `json:"created_at"`
-	UpdatedAt string  `json:"updated_at"`
+	ID             string  `json:"id"`
+	Name           string  `json:"name"`
+	ParentID       *string `json:"parent_id"`
+	OwnerID        string  `json:"owner_id"`
+	UserPermission string  `json:"user_permission,omitempty"`
+	CreatedAt      string  `json:"created_at"`
+	UpdatedAt      string  `json:"updated_at"`
 }
 
 type Document struct {
@@ -160,6 +161,7 @@ type Document struct {
 	Name            string  `json:"name"`
 	FolderID        *string `json:"folder_id"`
 	OwnerID         string  `json:"owner_id"`
+	UserPermission  string  `json:"user_permission,omitempty"`
 	MimeType        string  `json:"mime_type"`
 	SizeBytes       int64   `json:"size_bytes"`
 	StoragePath     string  `json:"storage_path"`
@@ -200,6 +202,25 @@ func (s *Store) ListFolders(ctx context.Context, ownerID string, parentID *strin
 		rows, err = s.db.QueryContext(ctx, query, ownerID, parentID)
 	}
 	
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var folders []Folder
+	for rows.Next() {
+		var f Folder
+		if err := rows.Scan(&f.ID, &f.Name, &f.ParentID, &f.OwnerID, &f.CreatedAt, &f.UpdatedAt); err != nil {
+			return nil, err
+		}
+		folders = append(folders, f)
+	}
+	return folders, nil
+}
+
+func (s *Store) ListFoldersByParent(ctx context.Context, parentID string) ([]Folder, error) {
+	query := `SELECT id, name, parent_id, owner_id, created_at, updated_at FROM app.folders WHERE parent_id = $1 ORDER BY created_at DESC`
+	rows, err := s.db.QueryContext(ctx, query, parentID)
 	if err != nil {
 		return nil, err
 	}
@@ -445,6 +466,28 @@ func (s *Store) ListDocuments(ctx context.Context, ownerID string, folderID *str
 		rows, err = s.db.QueryContext(ctx, query, ownerID, folderID)
 	}
 	
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var docs []Document
+	for rows.Next() {
+		var d Document
+		if err := rows.Scan(&d.ID, &d.Name, &d.FolderID, &d.OwnerID, &d.MimeType, &d.SizeBytes, &d.StoragePath, &d.Version, &d.PublicLinkToken, &d.CreatedAt, &d.UpdatedAt); err != nil {
+			return nil, err
+		}
+		docs = append(docs, d)
+	}
+	return docs, nil
+}
+
+func (s *Store) ListDocumentsByFolder(ctx context.Context, folderID string) ([]Document, error) {
+	query := `
+		SELECT id, name, folder_id, owner_id, mime_type, size_bytes, storage_path, version, public_link_token, created_at, updated_at
+		FROM app.documents WHERE folder_id = $1 ORDER BY created_at DESC
+	`
+	rows, err := s.db.QueryContext(ctx, query, folderID)
 	if err != nil {
 		return nil, err
 	}
