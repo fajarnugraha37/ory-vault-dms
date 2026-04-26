@@ -26,9 +26,13 @@ func NewRouter(s *store.Store, k *kratos.Client, st *storage.Storage, kc *keto.C
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Timeout(60 * time.Second))
 
-	// --- PUBLIC ROUTES (Bypass ALL Middlewares) ---
-	r.Get("/api/public/documents/{token}", handler.NewDocumentHandler(s, st, kc, k).DownloadPublicDocument)
-	r.Get("/api/public/documents/{token}/metadata", handler.NewDocumentHandler(s, st, kc, k).GetPublicMetadata)
+	docHandler := handler.NewDocumentHandler(s, st, kc, k)
+	nodeHandler := handler.NewNodeHandler(s, st, kc, k)
+	adminHandler := handler.NewAdminHandler(s, k)
+
+	// --- PUBLIC ROUTES ---
+	r.Get("/api/public/documents/{token}", docHandler.DownloadPublicDocument)
+	r.Get("/api/public/documents/{token}/metadata", docHandler.GetPublicMetadata)
 
 	r.NotFound(func(w http.ResponseWriter, r *http.Request) {
 		log.Printf("DEBUG 404: Route Not Found -> %s %s", r.Method, r.URL.Path)
@@ -39,13 +43,8 @@ func NewRouter(s *store.Store, k *kratos.Client, st *storage.Storage, kc *keto.C
 
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("OK")) })
 
-	h := handler.NewAdminHandler(s, k)
-	docHandler := handler.NewDocumentHandler(s, st, kc, k)
-	folderHandler := handler.NewFolderHandler(s, st, kc, k)
-
 	// --- PROTECTED ROUTES ---
 	r.Route("/api", func(r chi.Router) {
-
 		r.Use(internal_mw.AuthMiddleware(kf))
 		
 		r.Get("/me", func(w http.ResponseWriter, r *http.Request) {
@@ -54,30 +53,30 @@ func NewRouter(s *store.Store, k *kratos.Client, st *storage.Storage, kc *keto.C
 			json.NewEncoder(w).Encode(map[string]string{"user_id": userID, "message": "Verified"})
 		})
 
-		r.Route("/folders", func(r chi.Router) {
-			r.Post("/", folderHandler.CreateFolder)
-			r.Get("/", folderHandler.ListFolders)
-			r.With(internal_mw.RequirePermission(kc, "Folder", "delete")).Delete("/{id}", folderHandler.DeleteFolder)
-			r.With(internal_mw.RequirePermission(kc, "Folder", "edit")).Put("/{id}/rename", folderHandler.RenameFolder)
-			r.With(internal_mw.RequirePermission(kc, "Folder", "view")).Get("/{id}/access", folderHandler.ListFolderAccess)
-			r.With(internal_mw.RequirePermission(kc, "Folder", "owner")).Post("/{id}/share", folderHandler.ShareFolder)
-			r.With(internal_mw.RequirePermission(kc, "Folder", "owner")).Delete("/{id}/share/{userId}", folderHandler.RevokeShareFolder)
+		// Unified Nodes API
+		r.Route("/nodes", func(r chi.Router) {
+			r.Post("/", nodeHandler.CreateFolder)
+			r.Get("/", nodeHandler.ListNodes)
+			r.With(internal_mw.RequirePermission(kc, "nodes", "view")).Get("/{id}/access", nodeHandler.ListNodeAccess)
+			r.With(internal_mw.RequirePermission(kc, "nodes", "edit")).Put("/{id}/rename", nodeHandler.RenameNode)
+			r.With(internal_mw.RequirePermission(kc, "nodes", "owner")).Put("/{id}/move", nodeHandler.MoveNode)
+			r.With(internal_mw.RequirePermission(kc, "nodes", "delete")).Delete("/{id}", nodeHandler.SoftDeleteNode)
+			r.With(internal_mw.RequirePermission(kc, "nodes", "owner")).Post("/{id}/share", nodeHandler.ShareNode)
+			r.With(internal_mw.RequirePermission(kc, "nodes", "owner")).Delete("/{id}/share/{userId}", nodeHandler.RevokeShareNode)
 		})
 
+		// Legacy Compatibility Aliases
+		r.Get("/folders", nodeHandler.ListNodes)
+		r.Post("/folders", nodeHandler.CreateFolder)
+
+		// Document specific API (Upload/Download)
 		r.Route("/documents", func(r chi.Router) {
 			r.Post("/", docHandler.UploadDocument)
-			r.Get("/", docHandler.ListDocuments)
-			r.With(internal_mw.RequirePermission(kc, "Document", "view")).Get("/{id}/download", docHandler.DownloadDocument)
-			r.With(internal_mw.RequirePermission(kc, "Document", "view")).Get("/{id}/versions", docHandler.GetDocumentVersions)
-			r.With(internal_mw.RequirePermission(kc, "Document", "view")).Get("/{id}/access", docHandler.ListDocumentAccess)
-			r.With(internal_mw.RequirePermission(kc, "Document", "delete")).Delete("/{id}", docHandler.DeleteDocument)
-			r.With(internal_mw.RequirePermission(kc, "Document", "edit")).Put("/{id}/rename", docHandler.RenameDocument)
-			r.With(internal_mw.RequirePermission(kc, "Document", "edit")).Put("/{id}/move", docHandler.MoveDocument)
-			r.With(internal_mw.RequirePermission(kc, "Document", "view")).Post("/{id}/copy", docHandler.CopyDocument)
-			r.With(internal_mw.RequirePermission(kc, "Document", "owner")).Post("/{id}/share", docHandler.ShareDocument)
-			r.With(internal_mw.RequirePermission(kc, "Document", "owner")).Delete("/{id}/share/{userId}", docHandler.RevokeShareDocument)
-			r.With(internal_mw.RequirePermission(kc, "Document", "owner")).Post("/{id}/public-link", docHandler.GeneratePublicLink)
-			r.With(internal_mw.RequirePermission(kc, "Document", "owner")).Delete("/{id}/public-link", docHandler.RevokePublicLink)
+			r.Get("/", nodeHandler.ListNodes) // Legacy list support
+			r.With(internal_mw.RequirePermission(kc, "nodes", "view")).Get("/{id}/download", docHandler.DownloadDocument)
+			r.With(internal_mw.RequirePermission(kc, "nodes", "view")).Get("/{id}/versions", docHandler.GetDocumentVersions)
+			r.With(internal_mw.RequirePermission(kc, "nodes", "owner")).Post("/{id}/public-link", docHandler.GeneratePublicLink)
+			r.With(internal_mw.RequirePermission(kc, "nodes", "owner")).Delete("/{id}/public-link", docHandler.RevokePublicLink)
 		})
 	})
 	
@@ -85,37 +84,35 @@ func NewRouter(s *store.Store, k *kratos.Client, st *storage.Storage, kc *keto.C
 		r.Use(internal_mw.AuthMiddleware(kf))
 		r.Use(internal_mw.AdminOnly(s, k))
 
-		r.Get("/audit", h.GetAuditLogs)
-		r.Get("/identities", h.ListIdentities)
+		r.Get("/audit", adminHandler.GetAuditLogs)
+		r.Get("/identities", adminHandler.ListIdentities)
+		r.Post("/bulk/cleanup", adminHandler.BulkCleanupInactive)
+		r.Post("/bulk/import", adminHandler.BulkImportIdentities)
 
 		// --- RBAC Global Management ---
-		r.Get("/roles", h.ListRoles)
-		r.Post("/roles", h.CreateRole)
-		r.Delete("/roles/{roleID}", h.DeleteRole)
+		r.Get("/roles", adminHandler.ListRoles)
+		r.Post("/roles", adminHandler.CreateRole)
+		r.Delete("/roles/{roleID}", adminHandler.DeleteRole)
 
-		// --- Bulk Operations ---
-		r.Post("/bulk/cleanup", h.BulkCleanupInactive)
-		r.Post("/bulk/import", h.BulkImportIdentities)
-		
-		// --- Individual Identity Ops ---
-		r.Get("/identities/{id}", h.GetIdentity)
-		r.Delete("/identities/{id}", h.DeleteIdentity)
-		r.Put("/identities/{id}/state", h.PatchState)
-		r.Patch("/identities/{id}/traits", h.PatchTraits)
-		r.Post("/identities/{id}/recovery", h.PostRecovery)
-		r.Post("/identities/{id}/verify", h.PostVerify)
-		r.Post("/identities/{id}/impersonate", h.ImpersonateSubject)
-		r.Put("/identities/{id}/schema", h.SwitchIdentitySchema)
+		// --- Individual Identity Ops (RESTORED) ---
+		r.Get("/identities/{id}", adminHandler.GetIdentity)
+		r.Delete("/identities/{id}", adminHandler.DeleteIdentity)
+		r.Put("/identities/{id}/state", adminHandler.PatchState)
+		r.Patch("/identities/{id}/traits", adminHandler.PatchTraits)
+		r.Post("/identities/{id}/recovery", adminHandler.PostRecovery)
+		r.Post("/identities/{id}/verify", adminHandler.PostVerify)
+		r.Post("/identities/{id}/impersonate", adminHandler.ImpersonateSubject)
+		r.Put("/identities/{id}/schema", adminHandler.SwitchIdentitySchema)
 		
 		// --- User Role Assignments ---
-		r.Get("/identities/{id}/roles", h.GetUserRoles)
-		r.Post("/identities/{id}/roles", h.AssignUserRole)
-		r.Delete("/identities/{id}/roles/{roleID}", h.RemoveUserRole)
+		r.Get("/identities/{id}/roles", adminHandler.GetUserRoles)
+		r.Post("/identities/{id}/roles", adminHandler.AssignUserRole)
+		r.Delete("/identities/{id}/roles/{roleID}", adminHandler.RemoveUserRole)
 		
 		// --- Session Management ---
-		r.Get("/identities/{id}/sessions", h.ListSessions)
-		r.Delete("/identities/{id}/sessions", h.RevokeAllSessions)
-		r.Delete("/identities/{id}/sessions/{sid}", h.RevokeSession)
+		r.Get("/identities/{id}/sessions", adminHandler.ListSessions)
+		r.Delete("/identities/{id}/sessions", adminHandler.RevokeAllSessions)
+		r.Delete("/identities/{id}/sessions/{sid}", adminHandler.RevokeSession)
 	})
 
 	return r

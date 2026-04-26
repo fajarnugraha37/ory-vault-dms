@@ -4,33 +4,36 @@ CREATE SCHEMA IF NOT EXISTS keto;
 CREATE SCHEMA IF NOT EXISTS hydra;
 CREATE SCHEMA IF NOT EXISTS app;
 
--- DMS Core Metadata
-CREATE TABLE IF NOT EXISTS app.folders (
+-- Unified DMS Nodes (Folders and Files)
+CREATE TABLE IF NOT EXISTS app.nodes (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name TEXT NOT NULL,
-    parent_id UUID REFERENCES app.folders(id) ON DELETE CASCADE,
+    type TEXT NOT NULL CHECK (type IN ('folder', 'file')),
+    parent_id UUID REFERENCES app.nodes(id),
     owner_id UUID NOT NULL,
+    created_by UUID NOT NULL,
+    updated_by UUID NOT NULL,
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    deleted_at TIMESTAMPTZ,
+    deleted_by UUID,
+    is_deleted BOOLEAN NOT NULL DEFAULT FALSE,
+    public_link_token TEXT UNIQUE
 );
 
-CREATE TABLE IF NOT EXISTS app.documents (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    name TEXT NOT NULL,
-    folder_id UUID REFERENCES app.folders(id) ON DELETE CASCADE,
-    owner_id UUID NOT NULL,
+-- File Metadata Extension
+CREATE TABLE IF NOT EXISTS app.file_metadata (
+    node_id UUID PRIMARY KEY REFERENCES app.nodes(id) ON DELETE CASCADE,
     mime_type TEXT NOT NULL,
     size_bytes BIGINT NOT NULL,
     storage_path TEXT NOT NULL, -- Path di MinIO
-    version INT NOT NULL DEFAULT 1,
-    public_link_token TEXT UNIQUE,
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    version INT NOT NULL DEFAULT 1
 );
 
+-- Version History
 CREATE TABLE IF NOT EXISTS app.document_versions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    document_id UUID NOT NULL REFERENCES app.documents(id) ON DELETE CASCADE,
+    document_id UUID NOT NULL REFERENCES app.nodes(id) ON DELETE CASCADE,
     version_number INT NOT NULL,
     storage_path TEXT NOT NULL,
     size_bytes BIGINT NOT NULL,

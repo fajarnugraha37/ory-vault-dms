@@ -52,6 +52,16 @@ func (h *AdminHandler) GetIdentity(w http.ResponseWriter, r *http.Request) {
 	h.respondWithJSON(w, 200, identity)
 }
 
+func (h *AdminHandler) DeleteIdentity(w http.ResponseWriter, r *http.Request) {
+	adminID := r.Context().Value(middleware.UserIDKey).(string)
+	id := chi.URLParam(r, "id")
+	err := h.Kratos.DeleteIdentity(r.Context(), id)
+	if err != nil { h.respondWithError(w, 500, err.Error()); return }
+	
+	h.Store.SaveAuditLog(r.Context(), adminID, "DELETE_IDENTITY", id, "Identity permanently deleted", r.RemoteAddr, r.UserAgent())
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // --- Lifecycle Actions ---
 
 func (h *AdminHandler) PatchState(w http.ResponseWriter, r *http.Request) {
@@ -65,6 +75,19 @@ func (h *AdminHandler) PatchState(w http.ResponseWriter, r *http.Request) {
 	if err != nil { h.respondWithError(w, 500, err.Error()); return }
 	
 	h.Store.SaveAuditLog(r.Context(), adminID, "UPDATE_STATE", id, "Changed state to "+body.State, r.RemoteAddr, r.UserAgent())
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *AdminHandler) PatchTraits(w http.ResponseWriter, r *http.Request) {
+	adminID := r.Context().Value(middleware.UserIDKey).(string)
+	id := chi.URLParam(r, "id")
+	var traits map[string]interface{}
+	json.NewDecoder(r.Body).Decode(&traits)
+
+	patch := []client.JsonPatch{{Op: "replace", Path: "/traits", Value: traits}}
+	err := h.Kratos.PatchIdentity(r.Context(), id, patch)
+	if err != nil { h.respondWithError(w, 500, err.Error()); return }
+	h.Store.SaveAuditLog(r.Context(), adminID, "UPDATE_TRAITS", id, "Identity traits updated", r.RemoteAddr, r.UserAgent())
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -90,6 +113,30 @@ func (h *AdminHandler) SwitchIdentitySchema(w http.ResponseWriter, r *http.Reque
 	if err != nil { h.respondWithError(w, 500, err.Error()); return }
 
 	h.Store.SaveAuditLog(r.Context(), adminID, "SWITCH_SCHEMA", id, "Changed schema to "+body.SchemaID, r.RemoteAddr, r.UserAgent())
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *AdminHandler) PostRecovery(w http.ResponseWriter, r *http.Request) {
+	adminID := r.Context().Value(middleware.UserIDKey).(string)
+	id := chi.URLParam(r, "id")
+	link, err := h.Kratos.CreateRecoveryLink(r.Context(), id)
+	if err != nil { h.respondWithError(w, 500, err.Error()); return }
+	h.Store.SaveAuditLog(r.Context(), adminID, "GENERATE_RECOVERY", id, "Recovery link generated", r.RemoteAddr, r.UserAgent())
+	h.respondWithJSON(w, 200, link)
+}
+
+func (h *AdminHandler) PostVerify(w http.ResponseWriter, r *http.Request) {
+	adminID := r.Context().Value(middleware.UserIDKey).(string)
+	id := chi.URLParam(r, "id")
+	
+	patch := []client.JsonPatch{
+		{Op: "replace", Path: "/verifiable_addresses/0/status", Value: "completed"},
+		{Op: "replace", Path: "/verifiable_addresses/0/verified", Value: true},
+	}
+	err := h.Kratos.PatchIdentity(r.Context(), id, patch)
+	if err != nil { h.respondWithError(w, 500, err.Error()); return }
+
+	h.Store.SaveAuditLog(r.Context(), adminID, "MANUAL_VERIFY", id, "Email manually verified", r.RemoteAddr, r.UserAgent())
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -145,44 +192,7 @@ func (h *AdminHandler) BulkImportIdentities(w http.ResponseWriter, r *http.Reque
 	h.respondWithJSON(w, 200, map[string]interface{}{"imported_count": count})
 }
 
-// --- Individual Handlers ---
-
-func (h *AdminHandler) PatchTraits(w http.ResponseWriter, r *http.Request) {
-	adminID := r.Context().Value(middleware.UserIDKey).(string)
-	id := chi.URLParam(r, "id")
-	var traits map[string]interface{}
-	json.NewDecoder(r.Body).Decode(&traits)
-
-	patch := []client.JsonPatch{{Op: "replace", Path: "/traits", Value: traits}}
-	err := h.Kratos.PatchIdentity(r.Context(), id, patch)
-	if err != nil { h.respondWithError(w, 500, err.Error()); return }
-	h.Store.SaveAuditLog(r.Context(), adminID, "UPDATE_TRAITS", id, "Identity traits updated", r.RemoteAddr, r.UserAgent())
-	w.WriteHeader(http.StatusNoContent)
-}
-
-func (h *AdminHandler) PostRecovery(w http.ResponseWriter, r *http.Request) {
-	adminID := r.Context().Value(middleware.UserIDKey).(string)
-	id := chi.URLParam(r, "id")
-	link, err := h.Kratos.CreateRecoveryLink(r.Context(), id)
-	if err != nil { h.respondWithError(w, 500, err.Error()); return }
-	h.Store.SaveAuditLog(r.Context(), adminID, "GENERATE_RECOVERY", id, "Recovery link generated", r.RemoteAddr, r.UserAgent())
-	h.respondWithJSON(w, 200, link)
-}
-
-func (h *AdminHandler) PostVerify(w http.ResponseWriter, r *http.Request) {
-	adminID := r.Context().Value(middleware.UserIDKey).(string)
-	id := chi.URLParam(r, "id")
-	
-	patch := []client.JsonPatch{
-		{Op: "replace", Path: "/verifiable_addresses/0/status", Value: "completed"},
-		{Op: "replace", Path: "/verifiable_addresses/0/verified", Value: true},
-	}
-	err := h.Kratos.PatchIdentity(r.Context(), id, patch)
-	if err != nil { h.respondWithError(w, 500, err.Error()); return }
-
-	h.Store.SaveAuditLog(r.Context(), adminID, "MANUAL_VERIFY", id, "Email manually verified", r.RemoteAddr, r.UserAgent())
-	w.WriteHeader(http.StatusNoContent)
-}
+// --- Sessions ---
 
 func (h *AdminHandler) ListSessions(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
@@ -216,15 +226,7 @@ func (h *AdminHandler) RevokeAllSessions(w http.ResponseWriter, r *http.Request)
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (h *AdminHandler) DeleteIdentity(w http.ResponseWriter, r *http.Request) {
-	adminID := r.Context().Value(middleware.UserIDKey).(string)
-	id := chi.URLParam(r, "id")
-	err := h.Kratos.DeleteIdentity(r.Context(), id)
-	if err != nil { h.respondWithError(w, 500, err.Error()); return }
-	
-	h.Store.SaveAuditLog(r.Context(), adminID, "DELETE_IDENTITY", id, "Identity permanently deleted", r.RemoteAddr, r.UserAgent())
-	w.WriteHeader(http.StatusNoContent)
-}
+// --- Audit ---
 
 func (h *AdminHandler) GetAuditLogs(w http.ResponseWriter, r *http.Request) {
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
@@ -233,4 +235,88 @@ func (h *AdminHandler) GetAuditLogs(w http.ResponseWriter, r *http.Request) {
 	logs, err := h.Store.GetAuditLogs(r.Context(), limit, offset)
 	if err != nil { h.respondWithError(w, 500, err.Error()); return }
 	h.respondWithJSON(w, 200, logs)
+}
+
+// --- RBAC Global Management ---
+
+func (h *AdminHandler) ListRoles(w http.ResponseWriter, r *http.Request) {
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	if limit <= 0 { limit = 50 }
+	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+
+	roles, err := h.Store.ListRoles(r.Context(), limit, offset)
+	if err != nil { h.respondWithError(w, 500, err.Error()); return }
+	h.respondWithJSON(w, 200, roles)
+}
+
+func (h *AdminHandler) CreateRole(w http.ResponseWriter, r *http.Request) {
+	adminID := r.Context().Value(middleware.UserIDKey).(string)
+	var body struct {
+		ID          string `json:"id"`
+		Description string `json:"description"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		h.respondWithError(w, 400, "Invalid body")
+		return
+	}
+
+	if err := h.Store.CreateRole(r.Context(), body.ID, body.Description); err != nil {
+		h.respondWithError(w, 500, err.Error()); return
+	}
+
+	h.Store.SaveAuditLog(r.Context(), adminID, "CREATE_ROLE", body.ID, body.Description, r.RemoteAddr, r.UserAgent())
+	w.WriteHeader(http.StatusCreated)
+}
+
+func (h *AdminHandler) DeleteRole(w http.ResponseWriter, r *http.Request) {
+	adminID := r.Context().Value(middleware.UserIDKey).(string)
+	roleID := chi.URLParam(r, "roleID")
+
+	if err := h.Store.DeleteRole(r.Context(), roleID); err != nil {
+		h.respondWithError(w, 500, err.Error()); return
+	}
+
+	h.Store.SaveAuditLog(r.Context(), adminID, "DELETE_ROLE", roleID, "Role removed from system", r.RemoteAddr, r.UserAgent())
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// --- User Role Assignments ---
+
+func (h *AdminHandler) GetUserRoles(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	roles, err := h.Store.GetUserRoles(r.Context(), id)
+	if err != nil { h.respondWithError(w, 500, err.Error()); return }
+	h.respondWithJSON(w, 200, roles)
+}
+
+func (h *AdminHandler) AssignUserRole(w http.ResponseWriter, r *http.Request) {
+	adminID := r.Context().Value(middleware.UserIDKey).(string)
+	userID := chi.URLParam(r, "id")
+	var body struct {
+		RoleID string `json:"role_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		h.respondWithError(w, 400, "Invalid body")
+		return
+	}
+
+	if err := h.Store.AssignRole(r.Context(), userID, body.RoleID); err != nil {
+		h.respondWithError(w, 500, err.Error()); return
+	}
+
+	h.Store.SaveAuditLog(r.Context(), adminID, "ASSIGN_ROLE", userID, "Assigned role: "+body.RoleID, r.RemoteAddr, r.UserAgent())
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *AdminHandler) RemoveUserRole(w http.ResponseWriter, r *http.Request) {
+	adminID := r.Context().Value(middleware.UserIDKey).(string)
+	userID := chi.URLParam(r, "id")
+	roleID := chi.URLParam(r, "roleID")
+
+	if err := h.Store.RemoveRole(r.Context(), userID, roleID); err != nil {
+		h.respondWithError(w, 500, err.Error()); return
+	}
+
+	h.Store.SaveAuditLog(r.Context(), adminID, "REMOVE_ROLE", userID, "Removed role: "+roleID, r.RemoteAddr, r.UserAgent())
+	w.WriteHeader(http.StatusNoContent)
 }
