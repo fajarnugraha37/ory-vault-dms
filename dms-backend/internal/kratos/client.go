@@ -28,7 +28,6 @@ func (c *Client) GetIdentity(ctx context.Context, id string) (*client.Identity, 
 }
 
 func (c *Client) ListIdentities(ctx context.Context, pageSize int64, pageToken string) ([]client.Identity, string, error) {
-	log.Printf("KRATOS_OFFICIAL: Listing identities (size: %d, token: %s)", pageSize, pageToken)
 	req := c.api.IdentityAPI.ListIdentities(ctx)
 	if pageSize > 0 { req = req.PageSize(pageSize) }
 	if pageToken != "" { req = req.PageToken(pageToken) }
@@ -38,6 +37,27 @@ func (c *Client) ListIdentities(ctx context.Context, pageSize int64, pageToken s
 	return identities, "", nil
 }
 
+func (c *Client) CreateIdentityWithPassword(ctx context.Context, email, password, schema string, traits map[string]interface{}) (*client.Identity, error) {
+	log.Printf("KRATOS_OFFICIAL: Seeding identity %s", email)
+	if traits == nil { traits = make(map[string]interface{}) }
+	traits["email"] = email
+
+	body := client.CreateIdentityBody{
+		SchemaId: schema,
+		Traits:   traits,
+		Credentials: &client.IdentityWithCredentials{
+			Password: &client.IdentityWithCredentialsPassword{
+				Config: &client.IdentityWithCredentialsPasswordConfig{
+					Password: &password,
+				},
+			},
+		},
+	}
+
+	identity, _, err := c.api.IdentityAPI.CreateIdentity(ctx).CreateIdentityBody(body).Execute()
+	return identity, err
+}
+
 func (c *Client) PatchIdentity(ctx context.Context, id string, patches []client.JsonPatch) error {
 	log.Printf("KRATOS_OFFICIAL: Patching identity %s", id)
 	_, _, err := c.api.IdentityAPI.PatchIdentity(ctx, id).JsonPatch(patches).Execute()
@@ -45,7 +65,6 @@ func (c *Client) PatchIdentity(ctx context.Context, id string, patches []client.
 }
 
 func (c *Client) ListSessions(ctx context.Context, id string, pageSize int64, pageToken string) ([]client.Session, error) {
-	log.Printf("KRATOS_OFFICIAL: Listing sessions for %s (size: %d)", id, pageSize)
 	req := c.api.IdentityAPI.ListIdentitySessions(ctx, id)
 	if pageSize > 0 { req = req.PageSize(pageSize) }
 	if pageToken != "" { req = req.PageToken(pageToken) }
@@ -55,19 +74,16 @@ func (c *Client) ListSessions(ctx context.Context, id string, pageSize int64, pa
 }
 
 func (c *Client) RevokeSession(ctx context.Context, sid string) error {
-	log.Printf("KRATOS_OFFICIAL: Revoking session %s", sid)
 	_, err := c.api.IdentityAPI.DisableSession(ctx, sid).Execute()
 	return err
 }
 
 func (c *Client) RevokeAllSessions(ctx context.Context, id string) error {
-	log.Printf("KRATOS_OFFICIAL: Revoking ALL sessions for identity %s", id)
 	_, err := c.api.IdentityAPI.DeleteIdentitySessions(ctx, id).Execute()
 	return err
 }
 
 func (c *Client) CreateRecoveryLink(ctx context.Context, id string) (*client.RecoveryLinkForIdentity, error) {
-	log.Printf("KRATOS_OFFICIAL: Creating recovery link for %s", id)
 	req := c.api.IdentityAPI.CreateRecoveryLinkForIdentity(ctx)
 	link, _, err := req.CreateRecoveryLinkForIdentityBody(client.CreateRecoveryLinkForIdentityBody{
 		IdentityId: id,
@@ -76,7 +92,6 @@ func (c *Client) CreateRecoveryLink(ctx context.Context, id string) (*client.Rec
 }
 
 func (c *Client) DeleteIdentity(ctx context.Context, id string) error {
-	log.Printf("KRATOS_OFFICIAL: Deleting identity %s", id)
 	_, err := c.api.IdentityAPI.DeleteIdentity(ctx, id).Execute()
 	return err
 }

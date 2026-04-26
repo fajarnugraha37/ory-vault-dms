@@ -12,32 +12,47 @@ import (
 )
 
 func main() {
-	dsn := os.Getenv("DSN")
-	if dsn == "" { dsn = "postgres://ory:vault-pass@vault-db:5432/ory_vault?sslmode=disable&search_path=kratos" }
-	
-	jwksURL := os.Getenv("JWKS_URL")
-	if jwksURL == "" { jwksURL = "http://vault-oathkeeper:4456/.well-known/jwks.json" }
-
 	kratosAdminURL := os.Getenv("KRATOS_ADMIN_URL")
-	if kratosAdminURL == "" { kratosAdminURL = "http://vault-kratos:4434" }
+	if kratosAdminURL == "" {
+		kratosAdminURL = "http://REQUIRED_CONFIG_MISSING_KRATOS_ADMIN_URL"
+	}
 
-	// 1. Initialize DB Store
-	st, err := store.NewPostgresStore(dsn)
-	if err != nil { log.Fatalf("Store failed: %v", err) }
-	defer st.Close()
+	jwksURL := os.Getenv("JWKS_URL")
+	if jwksURL == "" {
+		jwksURL = "http://REQUIRED_CONFIG_MISSING_JWKS_URL"
+	}
 
-	// 2. Initialize Kratos Client
-	kr := kratos.NewClient(kratosAdminURL)
+	postgresDSN := os.Getenv("DSN")
+	if postgresDSN == "" {
+		postgresDSN = "postgres://REQUIRED_CONFIG_MISSING_DSN"
+	}
 
-	// 3. Initialize JWKS Keyfunc
+	// 1. Init SQL Store
+	s, err := store.NewPostgresStore(postgresDSN)
+	if err != nil {
+		log.Fatalf("CRITICAL: Failed to connect to DB. Check your DSN environment variable. Error: %v", err)
+	}
+	defer s.Close()
+
+	// 2. Init Kratos Client
+	k := kratos.NewClient(kratosAdminURL)
+
+	// 3. AUTO SEEDING (Bootstrap)
+	if err := s.SeedSystem(k); err != nil {
+		log.Printf("SEEDER_WARNING: Bootstrap process encountered issues: %v", err)
+	}
+
+	// 4. Init JWKS Fetcher
 	kf, err := keyfunc.NewDefault([]string{jwksURL})
-	if err != nil { log.Fatalf("JWKS failed: %v", err) }
+	if err != nil {
+		log.Fatalf("CRITICAL: Failed to init JWKS fetcher. Check your JWKS_URL. Error: %v", err)
+	}
 
-	// 4. Setup Router
-	router := api.NewRouter(st, kr, kf)
+	// 5. Start Router
+	router := api.NewRouter(s, k, kf)
 
-	log.Println("DMS Enterprise Backend listening on :8080")
+	log.Println("DMS Backend started on :8080")
 	if err := http.ListenAndServe(":8080", router); err != nil {
-		log.Fatal(err)
+		log.Fatalf("Server failed: %v", err)
 	}
 }
