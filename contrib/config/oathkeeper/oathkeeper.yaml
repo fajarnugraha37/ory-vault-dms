@@ -47,6 +47,11 @@ authenticators:
       preserve_query: true
       subject_from: identity.id
       extra_from: "@this"
+  oauth2_introspection:
+    enabled: true
+    config:
+      introspection_url: http://vault-hydra:4445/admin/oauth2/introspect
+      scope_strategy: wildcard
 
 authorizers:
   allow:
@@ -72,7 +77,8 @@ mutators:
       jwks_url: file:///etc/config/oathkeeper/jwks.json
       claims: |
         {
-          "session": {{ .Extra | toJson }}
+          "session": {{ .Extra | toJson }},
+          "scp": {{ .Extra.scp | toJson }}
         }
   header:
     enabled: true

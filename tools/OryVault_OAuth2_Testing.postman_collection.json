@@ -1,0 +1,119 @@
+{
+	"info": {
+		"name": "OryVault OAuth2 Integration",
+		"description": "Testing collection for Authorization Code and Client Credentials flows",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Flow 1: Authorization Code (Browser)",
+			"item": [
+				{
+					"name": "1. Authorize Request",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"protocol": "https",
+							"host": [
+								"auth",
+								"ory-vault",
+								"test"
+							],
+							"path": [
+								"oauth2",
+								"auth"
+							],
+							"query": [
+								{ "key": "client_id", "value": "YOUR_CLIENT_ID" },
+								{ "key": "response_type", "value": "code" },
+								{ "key": "scope", "value": "nodes.read openid offline" },
+								{ "key": "redirect_uri", "value": "https://webhook.site/YOUR_ID" },
+								{ "key": "state", "value": "xyz123" }
+							]
+						},
+						"description": "Paste this URL in Browser. It will trigger Login -> Consent -> Redirect with ?code=..."
+					},
+					"response": []
+				},
+				{
+					"name": "2. Exchange Code for Token",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "urlencoded",
+							"urlencoded": [
+								{ "key": "grant_type", "value": "authorization_code" },
+								{ "key": "code", "value": "CODE_FROM_REDIRECT" },
+								{ "key": "redirect_uri", "value": "https://webhook.site/YOUR_ID" },
+								{ "key": "client_id", "value": "YOUR_CLIENT_ID" },
+								{ "key": "client_secret", "value": "YOUR_CLIENT_SECRET" }
+							]
+						},
+						"url": {
+							"protocol": "https",
+							"host": ["auth", "ory-vault", "test"],
+							"path": ["oauth2", "token"]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Flow 2: Client Credentials (M2M)",
+			"item": [
+				{
+					"name": "1. Get M2M Token",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "urlencoded",
+							"urlencoded": [
+								{ "key": "grant_type", "value": "client_credentials" },
+								{ "key": "client_id", "value": "YOUR_CLIENT_ID" },
+								{ "key": "client_secret", "value": "YOUR_CLIENT_SECRET" },
+								{ "key": "scope", "value": "nodes.read nodes.write" }
+							]
+						},
+						"url": {
+							"protocol": "https",
+							"host": ["auth", "ory-vault", "test"],
+							"path": ["oauth2", "token"]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Resource Access (External API)",
+			"item": [
+				{
+					"name": "List Nodes (Bearer Token)",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{ "key": "token", "value": "YOUR_ACCESS_TOKEN", "type": "string" }
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"protocol": "https",
+							"host": ["ext-api", "ory-vault", "test"],
+							"path": ["api", "nodes"],
+							"query": [
+								{ "key": "limit", "value": "10" }
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		}
+	]
+}

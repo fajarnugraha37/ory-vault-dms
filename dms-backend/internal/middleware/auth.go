@@ -15,6 +15,7 @@ import (
 type UserContextKey string
 
 const UserIDKey UserContextKey = "user_id"
+const ClaimsKey UserContextKey = "claims"
 
 func AuthMiddleware(kf keyfunc.Keyfunc) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
@@ -38,7 +39,11 @@ func AuthMiddleware(kf keyfunc.Keyfunc) func(http.Handler) http.Handler {
 			}
 
 			sub, _ := claims.GetSubject()
+			
+			// Store subject and full claims in context
 			ctx := context.WithValue(r.Context(), UserIDKey, sub)
+			ctx = context.WithValue(ctx, ClaimsKey, claims)
+			
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}

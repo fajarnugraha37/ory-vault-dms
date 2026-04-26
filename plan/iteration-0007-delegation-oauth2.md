@@ -1,37 +1,55 @@
-# Plan: Iteration 0007 - Delegation & 3rd Party Integration (Phase 3)
+# Pelan: Lelaran 0007 - Delegasi & Integrasi Pihak Ketiga (Ory Hydra) - FINAL
 
-## Objective
+## 1. Objektif
+Mengimplementasikan delegasi akses menggunakan Ory Hydra untuk mengizinkan aplikasi pihak ketiga (Web/Mobile) maupun integrasi server-to-server (Script/Bot) mengakses DMS secara aman menggunakan protokol OAuth2.
 
-Implement OAuth2 delegation using Ory Hydra to allow third-party applications to access the Document Management System (DMS) securely. This includes setting up the Login and Consent flows, configuring Oathkeeper to validate OAuth2 tokens, and verifying access with specific scopes.
+## 2. Arsitektur & Keputusan Teknis
+- **Login & Consent Bridge**: Go Backend bertindak sebagai wrapper aman untuk Hydra Admin API. Frontend Next.js memanggil Backend, bukan Hydra Admin langsung.
+- **Dual-Auth Strategy (Oathkeeper)**: Satu rule API mendukung `cookie_session` (UI) dan `oauth2_introspection` (Third-party).
+- **Scope Enforcement**: Middleware Go memvalidasi scope `nodes.read`, `nodes.write`, dan `nodes.share` dari JWT claims.
+- **Client Management**: Implementasi Self-Service UI agar user bisa mendaftarkan aplikasi mereka sendiri. Data kepemilikan dicatat di tabel `app.oauth2_clients`.
+- **Subject Mapping**: Untuk *Client Credentials Flow*, middleware akan memetakan `client_id` ke `owner_id` (pendaftar aplikasi) agar pengecekan Keto tetap berfungsi.
 
-## Proposed Tasks
+## 3. Langkah Implementasi
 
-### 1. Ory Hydra Configuration & Client Setup
+### A. Infrastruktur & Database
+- [ ] **SQL**: Buat tabel `app.oauth2_clients` (id, client_id, owner_id, created_at).
+- [ ] **Docker**: Daftarkan `HYDRA_ADMIN_URL` di `vault-backend` dan `vault-ui`.
+- [ ] **Hydra Config**: Set `urls.login` dan `urls.consent` ke endpoint UI kita.
 
-- **Hydra Configuration**: Verify `contrib/config/hydra/hydra.yaml` is correctly configured to point to the Next.js UI for the Login and Consent endpoints (`urls.consent` and `urls.login`).
-- **OAuth2 Client Registration**: Create a script or CLI command to register a test third-party OAuth2 client in Hydra with the `authorization_code` grant type and scopes `dms.read` and `dms.share`.
+### B. Backend Bridge (Go)
+- [ ] Implementasi `POST /api/oauth2/login/accept`: Menerima `login_challenge`, validasi session Kratos, panggil Hydra `acceptLoginRequest`.
+- [ ] Implementasi `GET /api/oauth2/consent`: Menerima `consent_challenge`, panggil Hydra `getConsentRequest` untuk ambil info client/scopes.
+- [ ] Implementasi `POST /api/oauth2/consent/accept`: Kirim persetujuan user ke Hydra.
+- [ ] Implementasi `POST /api/nodes/clients`: Endpoint untuk mendaftarkan OAuth2 Client baru ke Hydra sekaligus mencatat di DB kita.
 
-### 2. Next.js Consent UI Implementation
+### C. Frontend (Next.js)
+- [ ] **Client Registration UI**: Halaman untuk user mengelola aplikasi mereka (Create/List/Delete OAuth2 Client).
+- [ ] **Login Bridge**: Logika di `/auth/login` untuk meneruskan flow ke Hydra jika ada `login_challenge`.
+- [ ] **Consent Page (`/auth/consent`)**: UI untuk menampilkan permintaan izin akses pihak ketiga.
 
-- **Consent Screen (`/auth/consent`)**: Implement the UI to handle Hydra's consent flow.
-  - Parse the `consent_challenge` from the URL.
-  - Fetch the requested scopes from Hydra's Admin API.
-  - Display a form asking the user to grant access to the requested scopes (e.g., "App X wants to access your documents").
-  - Submit the user's decision (accept/reject) back to Hydra and redirect to the final destination.
-- **Login Provider Bridging**: Ensure the Kratos login flow correctly hands off back to Hydra when an `oauth2_login_challenge` is present.
+### D. Security & Oathkeeper
+- [ ] Konfigurasi `oauth2_introspection` di `oathkeeper.yaml`.
+- [ ] Update `rules.yaml` agar rule API memiliki dua authenticator.
+- [ ] **Scope Middleware**: Buat middleware di Go untuk validasi scope berdasarkan HTTP Method.
 
-### 3. Oathkeeper Configuration for OAuth2
+## 4. Mekanisme Testing
 
-- **Authenticator Setup**: Enable and configure the `oauth2_introspection` or `jwt` authenticator in `contrib/config/oathkeeper/oathkeeper.yaml` to validate access tokens issued by Hydra.
-- **Access Rules Update**: Update `contrib/config/oathkeeper/rules.yaml` to allow backend API routes (e.g., `/api/<**>`) to be authenticated by *either* `cookie_session` (for first-party web UI) or `oauth2_introspection` (for third-party API clients).
+### Test Flow 1: Authorization Code (Aplikasi Web/Interaktif)
+1. **Initiate**: Gunakan browser untuk membuka:
+   `https://auth.ory-vault.test/oauth2/auth?client_id=<CLIENT_ID>&response_type=code&scope=nodes.read&redirect_uri=<CALLBACK>`
+2. **Login**: Harus di-redirect ke login page kita -> Login via Kratos.
+3. **Consent**: Harus muncul halaman persetujuan -> Klik "Allow".
+4. **Exchange**: Ambil `code` dari URL callback, lalu tukar ke token via `curl` ke Hydra `/oauth2/token`.
+5. **Access**: Panggil `GET /api/nodes` menggunakan `Authorization: Bearer <token>`.
+6. **Verify**: Harus return data file milik user tersebut.
 
-### 4. Go Backend Scope Validation (Optional/Enhancement)
+### Test Flow 2: Client Credentials (Integrasi Script/Bot)
+1. **Request Token**: Panggil Hydra `/oauth2/token` langsung menggunakan `client_id` & `client_secret` (tanpa interaksi user).
+   `scope` yang diminta: `nodes.read nodes.write`.
+2. **Access (Success)**: Panggil `POST /api/nodes` (Create Folder) menggunakan token tersebut.
+3. **Verify owner**: Cek di DB, folder yang dibuat harus memiliki `owner_id` yang sesuai dengan user yang mendaftarkan aplikasi tersebut.
+4. **Access (Forbidden)**: Coba hapus file orang lain menggunakan token bot tersebut -> Harus return **403 Forbidden** (Keto check).
 
-- **Scope Checking**: Read the granted scopes from the Oathkeeper forwarded headers (e.g., `X-Granted-Scopes`) to ensure the third-party client actually has the `dms.read` or `dms.share` scope before serving the request, acting as an additional layer of defense alongside Keto.
-
-## Validation Strategy
-
-1. **Consent Flow**: Initiate an OAuth2 Authorization Code flow (e.g., using Postman or a simple script). The browser should redirect to the Next.js login/consent screen and successfully return an authorization code.
-2. **Token Issuance**: Exchange the authorization code for an Access Token via Hydra's token endpoint.
-3. **API Access via Token**: Make a request to the protected Go Backend (`https://api.ory-vault.test/api/documents`) using the `Authorization: Bearer <token>` header.
-4. **Verification**: Oathkeeper must validate the token with Hydra, inject the Signed JWT containing the authorizing user's `sub`, and the Go backend must return `200 OK` (assuming Keto permissions also pass).
+## 5. Status: READY TO EXECUTE
+Semua keputusan arsitektur sudah final. Saya siap memulai dari **Task A: Infrastruktur & Database**.

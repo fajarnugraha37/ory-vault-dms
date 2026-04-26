@@ -10,6 +10,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/nugra/ory-vault/dms-backend/internal/handler"
+	"github.com/nugra/ory-vault/dms-backend/internal/hydra"
 	"github.com/nugra/ory-vault/dms-backend/internal/keto"
 	"github.com/nugra/ory-vault/dms-backend/internal/kratos"
 	internal_mw "github.com/nugra/ory-vault/dms-backend/internal/middleware"
@@ -17,7 +18,7 @@ import (
 	"github.com/nugra/ory-vault/dms-backend/internal/store"
 )
 
-func NewRouter(s *store.Store, k *kratos.Client, st *storage.Storage, kc *keto.Client, kf keyfunc.Keyfunc) http.Handler {
+func NewRouter(s *store.Store, k *kratos.Client, st *storage.Storage, kc *keto.Client, kf keyfunc.Keyfunc, hy *hydra.Client) http.Handler {
 	r := chi.NewRouter()
 
 	r.Use(middleware.RequestID)
@@ -29,10 +30,15 @@ func NewRouter(s *store.Store, k *kratos.Client, st *storage.Storage, kc *keto.C
 	docHandler := handler.NewDocumentHandler(s, st, kc, k)
 	nodeHandler := handler.NewNodeHandler(s, st, kc, k)
 	adminHandler := handler.NewAdminHandler(s, k)
+	oauth2Handler := handler.NewOAuth2Handler(s, hy)
 
 	// --- PUBLIC ROUTES ---
 	r.Get("/api/public/documents/{token}", docHandler.DownloadPublicDocument)
 	r.Get("/api/public/documents/{token}/metadata", docHandler.GetPublicMetadata)
+
+	// OAuth2 Public Bridge (No AuthMiddleware)
+	r.Get("/api/oauth2/login", oauth2Handler.GetLoginRequest)
+	r.Get("/api/oauth2/consent", oauth2Handler.GetConsentRequest)
 
 	r.NotFound(func(w http.ResponseWriter, r *http.Request) {
 		log.Printf("DEBUG 404: Route Not Found -> %s %s", r.Method, r.URL.Path)
@@ -53,8 +59,18 @@ func NewRouter(s *store.Store, k *kratos.Client, st *storage.Storage, kc *keto.C
 			json.NewEncoder(w).Encode(map[string]string{"user_id": userID, "message": "Verified"})
 		})
 
+		// OAuth2 Internal Bridge (Behind AuthMiddleware)
+		r.Route("/oauth2", func(r chi.Router) {
+			r.Post("/login/accept", oauth2Handler.AcceptLogin)
+			r.Post("/consent/accept", oauth2Handler.AcceptConsent)
+			r.Post("/clients", oauth2Handler.CreateClient)
+			r.Get("/clients", oauth2Handler.ListClients)
+			r.Delete("/clients/{clientId}", oauth2Handler.DeleteClient)
+		})
+
 		// Unified Nodes API
 		r.Route("/nodes", func(r chi.Router) {
+			r.Use(internal_mw.RequireScope(s))
 			r.Post("/", nodeHandler.CreateFolder)
 			r.Get("/", nodeHandler.ListNodes)
 			r.With(internal_mw.RequirePermission(kc, "nodes", "view")).Get("/{id}/access", nodeHandler.ListNodeAccess)
@@ -66,11 +82,12 @@ func NewRouter(s *store.Store, k *kratos.Client, st *storage.Storage, kc *keto.C
 		})
 
 		// Legacy Compatibility Aliases
-		r.Get("/folders", nodeHandler.ListNodes)
-		r.Post("/folders", nodeHandler.CreateFolder)
+		r.With(internal_mw.RequireScope(s)).Get("/folders", nodeHandler.ListNodes)
+		r.With(internal_mw.RequireScope(s)).Post("/folders", nodeHandler.CreateFolder)
 
 		// Document specific API (Upload/Download)
 		r.Route("/documents", func(r chi.Router) {
+			r.Use(internal_mw.RequireScope(s))
 			r.Post("/", docHandler.UploadDocument)
 			r.Get("/", nodeHandler.ListNodes) // Legacy list support
 			r.With(internal_mw.RequirePermission(kc, "nodes", "view")).Get("/{id}/download", docHandler.DownloadDocument)

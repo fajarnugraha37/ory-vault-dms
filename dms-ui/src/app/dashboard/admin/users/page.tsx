@@ -2,9 +2,10 @@
 
 import { useState, useEffect } from "react";
 import useSWR from "swr";
-import axios from "axios";
-import { 
-  Table, 
+import { api, fetcher } from "@/lib/api";
+import {
+  Table,
+ 
   TableBody, 
   TableCell, 
   TableHead, 
@@ -52,8 +53,6 @@ import {
   UploadCloud,
   FileJson
 } from "lucide-react";
-
-const fetcher = (url: string) => axios.get(url, { withCredentials: true }).then(res => res.data);
 
 interface Session {
   id: string;
@@ -162,18 +161,18 @@ export default function AdminUsersPage() {
   };
 
   const toggleState = () => 
-    handleAction('Toggle State', () => axios.put(`/admin-api/identities/${selectedUser!.id}/state`, { state: selectedUser!.state === 'active' ? 'inactive' : 'active' }, { withCredentials: true }));
+    handleAction('Toggle State', () => api.put(`/admin-api/identities/${selectedUser!.id}/state`, { state: selectedUser!.state === 'active' ? 'inactive' : 'active' }, { withCredentials: true }));
 
   const handleImpersonate = async () => {
     setLoading('impersonate');
     try {
-        const res = await axios.post(`/admin-api/identities/${selectedUser!.id}/impersonate`, {}, { withCredentials: true });
+        const res = await api.post(`/admin-api/identities/${selectedUser!.id}/impersonate`, {}, { withCredentials: true });
         setImpersonationLink(res.data.recovery_link);
         toast.success("Impersonation link generated");
     } catch (err) { toast.error("Failed"); } finally { setLoading(null); }
   };
 
-  const handleBulkCleanup = () => handleAction('Bulk Cleanup', () => axios.post(`/admin-api/bulk/cleanup?days=${cleanupDays}`, {}, { withCredentials: true }));
+  const handleBulkCleanup = () => handleAction('Bulk Cleanup', () => api.post(`/admin-api/bulk/cleanup?days=${cleanupDays}`, {}, { withCredentials: true }));
 
   const handleBulkImport = async () => {
     try {
@@ -185,7 +184,7 @@ export default function AdminUsersPage() {
             headers.forEach((h, i) => traits[h] = values[i]);
             return { traits, schema_id: "default" };
         });
-        await axios.post('/admin-api/bulk/import', data, { withCredentials: true });
+        await api.post('/admin-api/bulk/import', data, { withCredentials: true });
         toast.success(`Imported ${data.length} users`);
         mutate();
         setImportData("");
@@ -195,7 +194,7 @@ export default function AdminUsersPage() {
   const saveProfile = async () => {
     handleAction('Save Profile', async () => {
         // Update Traits
-        await axios.patch(`/admin-api/identities/${selectedUser!.id}/traits`, editTraits, { withCredentials: true });
+        await api.patch(`/admin-api/identities/${selectedUser!.id}/traits`, editTraits, { withCredentials: true });
         // Update Metadata if changed
         try {
             const meta = JSON.parse(editMetadata);
@@ -206,10 +205,10 @@ export default function AdminUsersPage() {
   };
 
   const revokeSession = (sid: string) => 
-    handleAction('Revoke Session', () => axios.delete(`/admin-api/identities/${selectedUser!.id}/sessions/${sid}`, { withCredentials: true }).then(() => mutateSessions()));
+    handleAction('Revoke Session', () => api.delete(`/admin-api/identities/${selectedUser!.id}/sessions/${sid}`, { withCredentials: true }).then(() => mutateSessions()));
 
   const revokeAllSessions = () => 
-    handleAction('Revoke All Sessions', () => axios.delete(`/admin-api/identities/${selectedUser!.id}/sessions`, { withCredentials: true }).then(() => mutateSessions()));
+    handleAction('Revoke All Sessions', () => api.delete(`/admin-api/identities/${selectedUser!.id}/sessions`, { withCredentials: true }).then(() => mutateSessions()));
 
   if (!identities) return <div className="flex items-center justify-center min-h-screen font-mono text-xs uppercase tracking-[0.4em]">SYNCING_IDENTITY_HUB...</div>;
 
@@ -290,14 +289,14 @@ export default function AdminUsersPage() {
                         <div className="space-y-4">
                             <Input placeholder="Role ID" value={newRole.id} onChange={e => setNewRole({...newRole, id: e.target.value.toLowerCase()})} className="rounded-xl border-2 font-bold" />
                             <Input placeholder="Description" value={newRole.description} onChange={e => setNewRole({...newRole, description: e.target.value})} className="rounded-xl border-2 font-bold" />
-                            <Button onClick={() => handleAction('Create Role', () => axios.post('/admin-api/roles', newRole, { withCredentials: true }).then(() => mutateRoles()))} className="w-full font-black py-6 rounded-2xl uppercase tracking-widest shadow-lg">Create System Role</Button>
+                            <Button onClick={() => handleAction('Create Role', () => api.post('/admin-api/roles', newRole, { withCredentials: true }).then(() => mutateRoles()))} className="w-full font-black py-6 rounded-2xl uppercase tracking-widest shadow-lg">Create System Role</Button>
                         </div>
                     </Card>
                     <div className="space-y-4">
                         {globalRoles?.map(role => (
                             <div key={role.id} className="bg-white border-2 border-slate-200 rounded-2xl p-6 flex justify-between items-center group hover:border-slate-900 transition-all shadow-sm">
                                 <div><div className="font-black text-slate-900 uppercase flex items-center gap-2 tracking-tight"><ShieldCheck size={14} className="text-blue-600" /> {role.id}</div><div className="text-[10px] text-slate-400 mt-1 italic font-medium">{role.description}</div></div>
-                                <Button variant="ghost" size="icon" onClick={() => handleAction('Delete Role', () => axios.delete(`/admin-api/roles/${role.id}`, { withCredentials: true }).then(() => mutateRoles()))} className="opacity-0 group-hover:opacity-100 text-red-400 rounded-xl hover:bg-red-50"><Trash2 size={16}/></Button>
+                                <Button variant="ghost" size="icon" onClick={() => handleAction('Delete Role', () => api.delete(`/admin-api/roles/${role.id}`, { withCredentials: true }).then(() => mutateRoles()))} className="opacity-0 group-hover:opacity-100 text-red-400 rounded-xl hover:bg-red-50"><Trash2 size={16}/></Button>
                             </div>
                         ))}
                     </div>
@@ -367,11 +366,11 @@ export default function AdminUsersPage() {
                                 <div className="flex justify-between"><span className="text-slate-500 uppercase">Auth:</span> <span className="font-black text-blue-400 lowercase">{selectedUser.traits.email}</span></div>
                             </div>
                             <div className="flex flex-wrap gap-2 p-3 bg-slate-50 rounded-2xl border-2 border-slate-100 min-h-[50px]">
-                                {userRoles?.map(rid => <Badge key={rid} className="bg-blue-600 font-black text-[8px] tracking-widest cursor-pointer hover:bg-red-500 transition-colors" onClick={() => handleAction('Revoke Role', () => axios.delete(`/admin-api/identities/${selectedUser.id}/roles/${rid}`, { withCredentials: true }).then(() => mutateUserRoles()))}>{rid.toUpperCase()}</Badge>)}
+                                {userRoles?.map(rid => <Badge key={rid} className="bg-blue-600 font-black text-[8px] tracking-widest cursor-pointer hover:bg-red-500 transition-colors" onClick={() => handleAction('Revoke Role', () => api.delete(`/admin-api/identities/${selectedUser.id}/roles/${rid}`, { withCredentials: true }).then(() => mutateUserRoles()))}>{rid.toUpperCase()}</Badge>)}
                                 <Dialog>
                                     <DialogTrigger asChild><Button variant="outline" size="sm" className="rounded-full h-6 px-3 border-dashed border-2 text-[8px] font-black"><Plus size={10} className="mr-1"/> ASSIGN_ROLE</Button></DialogTrigger>
                                     <DialogContent className="border-4 border-slate-900 rounded-3xl"><DialogHeader><DialogTitle className="font-black uppercase italic tracking-widest">Assign System Role</DialogTitle></DialogHeader>
-                                        <div className="py-4 space-y-2">{globalRoles?.filter(gr => !userRoles?.includes(gr.id)).map(gr => <Button key={gr.id} variant="secondary" className="w-full justify-start font-black text-xs py-5 rounded-xl" onClick={() => handleAction('Assign Role', () => axios.post(`/admin-api/identities/${selectedUser.id}/roles`, { role_id: gr.id }, { withCredentials: true }).then(() => mutateUserRoles()))}>{gr.id.toUpperCase()}</Button>)}</div>
+                                        <div className="py-4 space-y-2">{globalRoles?.filter(gr => !userRoles?.includes(gr.id)).map(gr => <Button key={gr.id} variant="secondary" className="w-full justify-start font-black text-xs py-5 rounded-xl" onClick={() => handleAction('Assign Role', () => api.post(`/admin-api/identities/${selectedUser.id}/roles`, { role_id: gr.id }, { withCredentials: true }).then(() => mutateUserRoles()))}>{gr.id.toUpperCase()}</Button>)}</div>
                                     </DialogContent>
                                 </Dialog>
                             </div>
@@ -433,7 +432,7 @@ export default function AdminUsersPage() {
                                 <DialogTrigger asChild><Button variant="ghost" className="w-full text-red-500 font-black uppercase tracking-widest text-[10px] hover:bg-red-50 rounded-xl py-3">Destroy Subject</Button></DialogTrigger>
                                 <DialogContent className="border-4 border-red-600 rounded-[2rem]"><CardHeader className="text-center"><AlertTriangle size={48} className="text-red-600 mx-auto mb-4 animate-pulse"/><DialogTitle className="font-black text-2xl text-red-600 uppercase italic tracking-widest text-center">Subject_Purge_Confirmation</DialogTitle></CardHeader>
                                     <DialogDescription className="text-center font-bold px-10 text-slate-500">This signal will permanently erase the identity across the cluster. THIS CANNOT BE UNDONE.</DialogDescription>
-                                    <DialogFooter className="pt-6"><Button variant="destructive" onClick={() => handleAction('Purge Identity', () => axios.delete(`/admin-api/identities/${selectedUser.id}`, { withCredentials: true }).then(() => setSelectedUser(null)))} className="w-full font-black py-8 rounded-2xl text-lg">EXECUTE_DESTRUCTION</Button></DialogFooter>
+                                    <DialogFooter className="pt-6"><Button variant="destructive" onClick={() => handleAction('Purge Identity', () => api.delete(`/admin-api/identities/${selectedUser.id}`, { withCredentials: true }).then(() => setSelectedUser(null)))} className="w-full font-black py-8 rounded-2xl text-lg">EXECUTE_DESTRUCTION</Button></DialogFooter>
                                 </DialogContent>
                              </Dialog>
                         </div>

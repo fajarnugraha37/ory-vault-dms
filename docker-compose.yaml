@@ -217,6 +217,7 @@ services:
       --san ory-vault.test 
       --san auth.ory-vault.test 
       --san api.ory-vault.test 
+      --san ext-api.ory-vault.test 
       --san app.ory-vault.test 
       --san mail.ory-vault.test 
       --ca-url https://vault-ca:9000 
@@ -256,6 +257,7 @@ services:
       - STORAGE_SECRET_KEY=vault-storage-pass
       - KETO_READ_URL=vault-keto:4466
       - KETO_WRITE_URL=vault-keto:4467
+      - HYDRA_ADMIN_URL=http://vault-hydra:4445
     networks:
       - ory-network
     healthcheck:
@@ -272,8 +274,12 @@ services:
   vault-ui:
     build:
       context: ./dms-ui
+      args:
+        - NEXT_PUBLIC_API_URL=https://api.ory-vault.test
     container_name: vault-ui
     restart: unless-stopped
+    environment:
+      - NEXT_PUBLIC_API_URL=https://api.ory-vault.test
     networks:
       - ory-network
     healthcheck:

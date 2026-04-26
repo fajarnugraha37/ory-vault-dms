@@ -3,6 +3,7 @@ selfservice:
   allowed_return_urls:
     - https://ory-vault.test/
     - https://api.ory-vault.test/
+    - https://auth.ory-vault.test/
   methods:
     password:
       enabled: true

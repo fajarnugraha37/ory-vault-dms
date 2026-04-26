@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import useSWR, { mutate as globalMutate } from "swr";
-import axios from "axios";
+import { api, fetcher } from "@/lib/api";
 import { 
   Table, 
   TableBody, 
@@ -50,10 +50,9 @@ import {
   UserX,
   Copy,
   Users,
-  Fingerprint
+  Fingerprint,
+  Settings
 } from "lucide-react";
-
-const fetcher = (url: string) => axios.get(url, { withCredentials: true }).then(res => res.data);
 
 const formatBytes = (bytes?: number) => {
   if (!bytes || bytes === 0) return '-';
@@ -142,7 +141,7 @@ export default function DocumentExplorerPage() {
     if (updateNodeId) formData.append("node_id", updateNodeId);
 
     try {
-      await axios.post("/api/documents", formData, {
+      await api.post("/api/documents", formData, {
         withCredentials: true,
         headers: { "Content-Type": "multipart/form-data" },
         onUploadProgress: (p) => setUploadProgress(Math.round((p.loaded * 100) / (p.total || file.size)))
@@ -157,7 +156,7 @@ export default function DocumentExplorerPage() {
   const handleDownload = async (node: Node) => {
     if (node.type !== 'file') return;
     try {
-      const res = await axios.get(`/api/documents/${node.id}/download`, { withCredentials: true, responseType: 'blob' });
+      const res = await api.get(`/api/documents/${node.id}/download`, { withCredentials: true, responseType: 'blob' });
       const url = window.URL.createObjectURL(new Blob([res.data]));
       const link = document.createElement('a');
       link.href = url;
@@ -170,7 +169,7 @@ export default function DocumentExplorerPage() {
 
   const handleCreateFolder = async () => {
     if (!newFolderName.trim()) return;
-    handleAction('Folder Creation', () => axios.post("/api/nodes", {
+    handleAction('Folder Creation', () => api.post("/api/nodes", {
         name: newFolderName,
         parent_id: currentFolder
     }, { withCredentials: true }).then(() => setNewFolderName("")));
@@ -178,7 +177,7 @@ export default function DocumentExplorerPage() {
 
   const handleRename = async () => {
     if (!renameObj || !newName.trim()) return;
-    handleAction('Rename', () => axios.put(`/api/nodes/${renameObj.id}/rename`, { name: newName }, { withCredentials: true }).then(() => {
+    handleAction('Rename', () => api.put(`/api/nodes/${renameObj.id}/rename`, { name: newName }, { withCredentials: true }).then(() => {
         setRenameObj(null);
         setNewName("");
     }));
@@ -186,7 +185,7 @@ export default function DocumentExplorerPage() {
 
   const handleMove = async () => {
     if (!moveObj) return;
-    handleAction('Move', () => axios.put(`/api/nodes/${moveObj.id}/move`, { parent_id: targetParentId.trim() === "" ? null : targetParentId }, { withCredentials: true }).then(() => {
+    handleAction('Move', () => api.put(`/api/nodes/${moveObj.id}/move`, { parent_id: targetParentId.trim() === "" ? null : targetParentId }, { withCredentials: true }).then(() => {
         setMoveObj(null);
         setTargetParentId("");
     }));
@@ -194,12 +193,12 @@ export default function DocumentExplorerPage() {
 
   const handleDelete = async (id: string) => {
     if (!confirm("Delete this item? This will also affect all nested items.")) return;
-    handleAction('Deletion', () => axios.delete(`/api/nodes/${id}`, { withCredentials: true }));
+    handleAction('Deletion', () => api.delete(`/api/nodes/${id}`, { withCredentials: true }));
   };
 
   const handleShare = async () => {
     if (!shareObj || !shareEmail) return;
-    handleAction('Sharing', () => axios.post(`/api/nodes/${shareObj.id}/share`, { email: shareEmail, relation: shareRelation }, { withCredentials: true }).then(() => {
+    handleAction('Sharing', () => api.post(`/api/nodes/${shareObj.id}/share`, { email: shareEmail, relation: shareRelation }, { withCredentials: true }).then(() => {
         setShareEmail("");
         mutateAccess();
     }));
@@ -207,12 +206,12 @@ export default function DocumentExplorerPage() {
 
   const handleRevoke = async (userId: string, rel: string) => {
     if (!shareObj) return;
-    handleAction('Revoking Access', () => axios.delete(`/api/nodes/${shareObj.id}/share/${userId}`, { data: { relation: rel }, withCredentials: true }).then(() => mutateAccess()));
+    handleAction('Revoking Access', () => api.delete(`/api/nodes/${shareObj.id}/share/${userId}`, { data: { relation: rel }, withCredentials: true }).then(() => mutateAccess()));
   };
 
   const handlePublicLink = async () => {
     if (!shareObj) return;
-    handleAction('Generate Link', () => axios.post(`/api/documents/${shareObj.id}/public-link`, {}, { withCredentials: true }).then(res => {
+    handleAction('Generate Link', () => api.post(`/api/documents/${shareObj.id}/public-link`, {}, { withCredentials: true }).then(res => {
         setShareObj({...shareObj, token: res.data.public_link_token});
         mutateNodes();
     }));
@@ -220,7 +219,7 @@ export default function DocumentExplorerPage() {
 
   const handleRevokePublic = async () => {
     if (!shareObj) return;
-    handleAction('Revoke Link', () => axios.delete(`/api/documents/${shareObj.id}/public-link`, { withCredentials: true }).then(() => {
+    handleAction('Revoke Link', () => api.delete(`/api/documents/${shareObj.id}/public-link`, { withCredentials: true }).then(() => {
         setShareObj({...shareObj, token: null});
         mutateNodes();
     }));
@@ -262,6 +261,9 @@ export default function DocumentExplorerPage() {
           <span className="font-black text-2xl tracking-tighter uppercase italic">Vault_Ops <span className="text-slate-400">DMS</span></span>
         </div>
         <div className="flex gap-4">
+            <Button variant="outline" size="sm" asChild className="border-2 font-black text-[10px] rounded-xl hover:bg-slate-900 hover:text-white transition-all">
+                <a href="/dashboard/apps"><Settings size={14} className="mr-2"/> MANAGE_APPS</a>
+            </Button>
             <Dialog>
                 <DialogTrigger asChild><Button variant="default" size="sm" className="font-black text-xs rounded-xl shadow-lg" onClick={() => setUpdateNodeId(null)}><UploadCloud size={16} className="mr-2" /> UPLOAD</Button></DialogTrigger>
                 <DialogContent className="border-4 border-slate-900 rounded-[2rem]">

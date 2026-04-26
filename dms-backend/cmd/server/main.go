@@ -7,16 +7,20 @@ import (
 
 	"github.com/MicahParks/keyfunc/v3"
 	"github.com/nugra/ory-vault/dms-backend/internal/api"
+	"github.com/nugra/ory-vault/dms-backend/internal/hydra"
 	"github.com/nugra/ory-vault/dms-backend/internal/keto"
 	"github.com/nugra/ory-vault/dms-backend/internal/kratos"
 	"github.com/nugra/ory-vault/dms-backend/internal/storage"
 	"github.com/nugra/ory-vault/dms-backend/internal/store"
-	)
+)
 
-	func main() {
+func main() {
 	// Menghapus default value yang benar agar sistem langsung gagal jika env tidak di-set
 	kratosAdminURL := os.Getenv("KRATOS_ADMIN_URL")
 	if kratosAdminURL == "" { kratosAdminURL = "http://REQUIRED_CONFIG_MISSING_KRATOS_ADMIN_URL" }
+
+	hydraAdminURL := os.Getenv("HYDRA_ADMIN_URL")
+	if hydraAdminURL == "" { hydraAdminURL = "http://REQUIRED_CONFIG_MISSING_HYDRA_ADMIN_URL" }
 
 	ketoReadURL := os.Getenv("KETO_READ_URL")
 	if ketoReadURL == "" { ketoReadURL = "REQUIRED_CONFIG_MISSING_KETO_READ_URL" }
@@ -47,9 +51,10 @@ import (
 	}
 	defer s.Close()
 
-	// 2. Init Kratos & Keto Clients
+	// 2. Init Kratos, Keto & Hydra Clients
 	k := kratos.NewClient(kratosAdminURL)
 	kc := keto.NewClient(ketoReadURL, ketoWriteURL)
+	hy := hydra.NewClient(hydraAdminURL)
 
 	// 3. Init MinIO Storage
 	st, err := storage.NewMinioStorage(storageEndpoint, storageAccessKey, storageSecretKey, "dms-vault")
@@ -69,7 +74,7 @@ import (
 	}
 
 	// 6. Start Router
-	router := api.NewRouter(s, k, st, kc, kf)
+	router := api.NewRouter(s, k, st, kc, kf, hy)
 
 	log.Println("DMS Backend started on :8080")
 	if err := http.ListenAndServe(":8080", router); err != nil {

@@ -3,6 +3,7 @@
 import { useEffect, useState, Suspense } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
 import { ory } from "@/lib/ory"
+import { api } from "@/lib/api"
 import { LoginFlow, UpdateLoginFlowBody } from "@ory/client"
 import { AxiosError } from "axios"
 
@@ -30,14 +31,20 @@ function LoginContent() {
         setValues((prev) => ({ ...initialValues, ...prev }))
       })
     } else {
+      const returnTo = searchParams.get("return_to");
+      const loginChallenge = searchParams.get("login_challenge");
+      
       ory
         .createBrowserLoginFlow({
           refresh: true,
-          returnTo: searchParams.get("return_to") || undefined,
+          returnTo: returnTo || undefined,
         })
         .then(({ data }) => {
           setFlow(data)
-          router.replace(`/auth/login?flow=${data.id}`)
+          let nextUrl = `/auth/login?flow=${data.id}`;
+          if (returnTo) nextUrl += `&return_to=${encodeURIComponent(returnTo)}`;
+          if (loginChallenge) nextUrl += `&login_challenge=${encodeURIComponent(loginChallenge)}`;
+          router.replace(nextUrl);
         })
         .catch((err: AxiosError) => {
           console.error(err)
@@ -58,8 +65,36 @@ function LoginContent() {
           ...values,
         } as UpdateLoginFlowBody,
       })
-      .then(() => {
-        router.push("/")
+      .then(async ({ data: loginResponse }) => {
+        // Check for Hydra login challenge
+        const loginChallenge = searchParams.get("login_challenge");
+        
+        if (loginChallenge) {
+          try {
+            // Use centralized API instance
+            const res = await api.post("/api/oauth2/login/accept", {
+              challenge: loginChallenge,
+              subject: loginResponse.session?.identity?.id
+            });
+            
+            if (res.data.redirect_to) {
+              window.location.href = res.data.redirect_to;
+              return;
+            }
+          } catch (e) {
+            console.error("Hydra login accept failed", e);
+            setError("OAuth2 integration error. Please contact admin.");
+            return;
+          }
+        }
+        
+        // Use return_to if present, otherwise default to home
+        const returnTo = searchParams.get("return_to");
+        if (returnTo) {
+            window.location.href = returnTo;
+        } else {
+            router.push("/");
+        }
       })
       .catch((err: AxiosError) => {
         if (err.response?.status === 400) {

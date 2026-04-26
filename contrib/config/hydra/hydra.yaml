@@ -3,13 +3,34 @@ serve:
     port: 4444
   admin:
     port: 4445
+  cookies:
+    domain: ory-vault.test
+    same_site_mode: Lax
 
 urls:
+  login: https://ory-vault.test/auth/login
+  consent: https://ory-vault.test/auth/consent
+  logout: https://ory-vault.test/auth/logout
   self:
     issuer: https://auth.ory-vault.test/
-  consent: http://ory-vault.test/consent
-  login: http://ory-vault.test/login
-  logout: http://ory-vault.test/logout
 
 strategies:
   access_token: opaque
+
+ttl:
+  login_consent_request: 1h
+  access_token: 1h
+  refresh_token: 720h
+  id_token: 1h
+  auth_code: 10m
+
+secrets:
+  system:
+    - "you-must-set-this-to-a-secure-key-at-least-32-characters-long"
+
+oidc:
+  subject_identifiers:
+    supported_types:
+      - public
+    pairwise:
+      salt: "you-must-set-this-to-a-secure-key-at-least-32-characters-long"

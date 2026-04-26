@@ -1,9 +1,10 @@
+# --- Health Check ---
 - id: "backend-health-rule"
   upstream:
     preserve_host: true
     url: "http://vault-backend:8080"
   match:
-    url: "https://api.ory-vault.test/health"
+    url: "https://<api|ext-api>.ory-vault.test/health"
     methods: ["GET"]
   authenticators:
     - handler: noop
@@ -14,23 +15,25 @@
   errors:
     - handler: json
 
-- id: "backend-public-api-rule"
+# --- First-Party API (UI Usage via api.ory-vault.test) ---
+# Authenticator: COOKIE ONLY. No scope check.
+- id: "first-party-api-rule"
   upstream:
     preserve_host: true
     url: "http://vault-backend:8080"
   match:
-    url: "https://api.ory-vault.test/api/public<**>" # atau <.*>
+    url: "https://api.ory-vault.test/api/<**>"
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH"]
   authenticators:
-    - handler: noop
+    - handler: cookie_session
   authorizer:
     handler: allow
   mutators:
-    - handler: noop
+    - handler: id_token
   errors:
     - handler: json
 
-- id: "backend-admin-rule"
+- id: "first-party-admin-rule"
   upstream:
     preserve_host: true
     url: "http://vault-backend:8080"
@@ -46,15 +49,17 @@
   errors:
     - handler: json
 
-- id: "backend-api-nodes-rule"
+# --- Third-Party API (External Apps via ext-api.ory-vault.test) ---
+# Authenticator: OAUTH2 ONLY. Enforces scopes.
+- id: "third-party-api-rule"
   upstream:
     preserve_host: true
     url: "http://vault-backend:8080"
   match:
-    url: "https://api.ory-vault.test/api/nodes<**>"
+    url: "https://ext-api.ory-vault.test/api/<**>"
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH"]
   authenticators:
-    - handler: cookie_session
+    - handler: oauth2_introspection
   authorizer:
     handler: allow
   mutators:
@@ -62,50 +67,19 @@
   errors:
     - handler: json
 
-- id: "backend-api-documents-rule"
+# --- OAuth2 Flow Bridge (Used during Login/Consent) ---
+- id: "oauth2-flow-bridge-rule"
   upstream:
     preserve_host: true
     url: "http://vault-backend:8080"
   match:
-    url: "https://api.ory-vault.test/api/documents<**>"
-    methods: ["GET", "POST", "PUT", "DELETE", "PATCH"]
-  authenticators:
-    - handler: cookie_session
-  authorizer:
-    handler: allow
-  mutators:
-    - handler: id_token
-  errors:
-    - handler: json
-
-- id: "backend-api-folders-rule"
-  upstream:
-    preserve_host: true
-    url: "http://vault-backend:8080"
-  match:
-    url: "https://api.ory-vault.test/api/folders<**>"
-    methods: ["GET", "POST", "PUT", "DELETE", "PATCH"]
-  authenticators:
-    - handler: cookie_session
-  authorizer:
-    handler: allow
-  mutators:
-    - handler: id_token
-  errors:
-    - handler: json
-
-- id: "backend-api-me-rule"
-  upstream:
-    preserve_host: true
-    url: "http://vault-backend:8080"
-  match:
-    url: "https://api.ory-vault.test/api/me"
+    url: "https://api.ory-vault.test/api/oauth2/<(login|consent)><**>"
     methods: ["GET"]
   authenticators:
-    - handler: cookie_session
+    - handler: noop
   authorizer:
     handler: allow
   mutators:
-    - handler: id_token
+    - handler: noop
   errors:
     - handler: json
