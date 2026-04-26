@@ -254,6 +254,8 @@ services:
       - STORAGE_ENDPOINT=vault-storage:9000
       - STORAGE_ACCESS_KEY=ory-admin
       - STORAGE_SECRET_KEY=vault-storage-pass
+      - KETO_READ_URL=vault-keto:4466
+      - KETO_WRITE_URL=vault-keto:4467
     networks:
       - ory-network
     healthcheck:

@@ -19,10 +19,10 @@ import (
 	if kratosAdminURL == "" { kratosAdminURL = "http://REQUIRED_CONFIG_MISSING_KRATOS_ADMIN_URL" }
 
 	ketoReadURL := os.Getenv("KETO_READ_URL")
-	if ketoReadURL == "" { ketoReadURL = "vault-keto:4466" }
+	if ketoReadURL == "" { ketoReadURL = "REQUIRED_CONFIG_MISSING_KETO_READ_URL" }
 
 	ketoWriteURL := os.Getenv("KETO_WRITE_URL")
-	if ketoWriteURL == "" { ketoWriteURL = "vault-keto:4467" }
+	if ketoWriteURL == "" { ketoWriteURL = "REQUIRED_CONFIG_MISSING_KETO_WRITE_URL" }
 
 	jwksURL := os.Getenv("JWKS_URL")
 	if jwksURL == "" { jwksURL = "http://REQUIRED_CONFIG_MISSING_JWKS_URL" }

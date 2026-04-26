@@ -28,6 +28,7 @@ func NewRouter(s *store.Store, k *kratos.Client, st *storage.Storage, kc *keto.C
 
 	// --- PUBLIC ROUTES (Bypass ALL Middlewares) ---
 	r.Get("/api/public/documents/{token}", handler.NewDocumentHandler(s, st, kc, k).DownloadPublicDocument)
+	r.Get("/api/public/documents/{token}/metadata", handler.NewDocumentHandler(s, st, kc, k).GetPublicMetadata)
 
 	r.NotFound(func(w http.ResponseWriter, r *http.Request) {
 		log.Printf("DEBUG 404: Route Not Found -> %s %s", r.Method, r.URL.Path)

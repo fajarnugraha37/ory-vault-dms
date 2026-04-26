@@ -181,6 +181,15 @@ func (h *FolderHandler) ListFolders(w http.ResponseWriter, r *http.Request) {
 
 func (h *FolderHandler) DeleteFolder(w http.ResponseWriter, r *http.Request) {
 	folderID := chi.URLParam(r, "id")
+	userID := r.Context().Value(middleware.UserIDKey).(string)
+
+	// SECURITY: Verify management permission
+	allowed, err := h.Keto.CheckPermission(r.Context(), "Folder", folderID, "edit", userID)
+	if err != nil || !allowed {
+		h.respondWithError(w, http.StatusForbidden, "No permission to delete folder")
+		return
+	}
+
 	if err := h.Store.DeleteFolder(r.Context(), folderID); err != nil {
 		h.respondWithError(w, http.StatusInternalServerError, "Failed to delete folder")
 		return
@@ -190,6 +199,15 @@ func (h *FolderHandler) DeleteFolder(w http.ResponseWriter, r *http.Request) {
 
 func (h *FolderHandler) RenameFolder(w http.ResponseWriter, r *http.Request) {
 	folderID := chi.URLParam(r, "id")
+	userID := r.Context().Value(middleware.UserIDKey).(string)
+
+	// SECURITY: Verify edit permission
+	allowed, err := h.Keto.CheckPermission(r.Context(), "Folder", folderID, "edit", userID)
+	if err != nil || !allowed {
+		h.respondWithError(w, http.StatusForbidden, "No permission to rename folder")
+		return
+	}
+
 	var body struct {
 		Name string `json:"name"`
 	}
@@ -207,6 +225,15 @@ func (h *FolderHandler) RenameFolder(w http.ResponseWriter, r *http.Request) {
 
 func (h *FolderHandler) ShareFolder(w http.ResponseWriter, r *http.Request) {
 	folderID := chi.URLParam(r, "id")
+	userID := r.Context().Value(middleware.UserIDKey).(string)
+
+	// SECURITY: Only those with edit access can share
+	allowed, err := h.Keto.CheckPermission(r.Context(), "Folder", folderID, "edit", userID)
+	if err != nil || !allowed {
+		h.respondWithError(w, http.StatusForbidden, "No permission to share folder")
+		return
+	}
+
 	var body struct {
 		Email    string `json:"email"`
 		Relation string `json:"relation"` // "viewer" or "editor"
@@ -230,26 +257,20 @@ func (h *FolderHandler) ShareFolder(w http.ResponseWriter, r *http.Request) {
 	var targetUserID string
 	for _, ident := range identities {
 		traits, ok := ident.Traits.(map[string]interface{})
-		if !ok {
-			continue
-		}
+		if !ok { continue }
 		email, _ := traits["email"].(string)
 		if email == body.Email {
 			targetUserID = ident.Id
-			log.Printf("SHARE_DEBUG: Found target user %s for folder email %s", targetUserID, body.Email)
 			break
 		}
 	}
 
 	if targetUserID == "" {
-		log.Printf("SHARE_DEBUG: User with email %s NOT FOUND in %d identities", body.Email, len(identities))
 		h.respondWithError(w, http.StatusNotFound, "User with that email not found")
 		return
 	}
 
-	log.Printf("SHARE_DEBUG: Creating Keto relation: Folder:%s # %s @ %s", folderID, body.Relation, targetUserID)
 	if err := h.Keto.CreateRelationship(r.Context(), "Folder", folderID, body.Relation, targetUserID); err != nil {
-		log.Printf("KETO_ERROR: Failed to share folder: %v", err)
 		h.respondWithError(w, http.StatusInternalServerError, "Failed to share folder")
 		return
 	}
@@ -260,9 +281,17 @@ func (h *FolderHandler) ShareFolder(w http.ResponseWriter, r *http.Request) {
 func (h *FolderHandler) RevokeShareFolder(w http.ResponseWriter, r *http.Request) {
 	folderID := chi.URLParam(r, "id")
 	targetUserID := chi.URLParam(r, "userId")
+	userID := r.Context().Value(middleware.UserIDKey).(string)
+
+	// SECURITY: Only those with edit access can revoke
+	allowed, err := h.Keto.CheckPermission(r.Context(), "Folder", folderID, "edit", userID)
+	if err != nil || !allowed {
+		h.respondWithError(w, http.StatusForbidden, "No permission to modify access")
+		return
+	}
 
 	var body struct {
-		Relation string `json:"relation"` // "viewer" or "editor"
+		Relation string `json:"relation"` 
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		h.respondWithError(w, http.StatusBadRequest, "Invalid payload")
@@ -278,6 +307,15 @@ func (h *FolderHandler) RevokeShareFolder(w http.ResponseWriter, r *http.Request
 
 func (h *FolderHandler) ListFolderAccess(w http.ResponseWriter, r *http.Request) {
 	folderID := chi.URLParam(r, "id")
+	userID := r.Context().Value(middleware.UserIDKey).(string)
+
+	// SECURITY: Must have view access to see access list
+	allowed, err := h.Keto.CheckPermission(r.Context(), "Folder", folderID, "view", userID)
+	if err != nil || !allowed {
+		h.respondWithError(w, http.StatusForbidden, "Access denied")
+		return
+	}
+
 	relations, err := h.Keto.ListRelationships(r.Context(), "Folder", folderID, "")
 	if err != nil {
 		h.respondWithError(w, http.StatusInternalServerError, "Failed to list access")
@@ -298,9 +336,7 @@ func (h *FolderHandler) ListFolderAccess(w http.ResponseWriter, r *http.Request)
 	for _, rel := range relations {
 		if rel.Subject.GetId() != "" {
 			email := idToEmail[rel.Subject.GetId()]
-			if email == "" {
-				email = rel.Subject.GetId()
-			}
+			if email == "" { email = rel.Subject.GetId() }
 			accessList = append(accessList, map[string]string{
 				"user_id":  rel.Subject.GetId(),
 				"email":    email,

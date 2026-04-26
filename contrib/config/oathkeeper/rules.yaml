@@ -3,8 +3,24 @@
     preserve_host: true
     url: "http://vault-backend:8080"
   match:
-    url: "https://<**>ory-vault.test/health"
+    url: "https://api.ory-vault.test/health"
     methods: ["GET"]
+  authenticators:
+    - handler: noop
+  authorizer:
+    handler: allow
+  mutators:
+    - handler: noop
+  errors:
+    - handler: json
+
+- id: "backend-public-api-rule"
+  upstream:
+    preserve_host: true
+    url: "http://vault-backend:8080"
+  match:
+    url: "https://api.ory-vault.test/api/public<**>" # atau <.*>
+    methods: ["GET", "POST", "PUT", "DELETE", "PATCH"]
   authenticators:
     - handler: noop
   authorizer:
@@ -19,8 +35,7 @@
     preserve_host: true
     url: "http://vault-backend:8080"
   match:
-    # Prefix unik agar tidak overlap dengan /api/
-    url: "https://<**>ory-vault.test/admin-api/<**>"
+    url: "https://api.ory-vault.test/admin-api/<**>"
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH"]
   authenticators:
     - handler: cookie_session
@@ -31,29 +46,45 @@
   errors:
     - handler: json
 
-- id: "backend-public-api-rule"
+- id: "backend-api-documents-rule"
   upstream:
     preserve_host: true
     url: "http://vault-backend:8080"
   match:
-    url: "https://<**>ory-vault.test/api/public/<**>"
+    url: "https://api.ory-vault.test/api/documents<**>"
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH"]
   authenticators:
-    - handler: noop
+    - handler: cookie_session
   authorizer:
     handler: allow
   mutators:
-    - handler: noop
+    - handler: id_token
   errors:
     - handler: json
 
-- id: "backend-api-rule"
+- id: "backend-api-folders-rule"
   upstream:
     preserve_host: true
     url: "http://vault-backend:8080"
   match:
-    url: "https://<**>ory-vault.test/api/<**>"
+    url: "https://api.ory-vault.test/api/folders<**>"
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH"]
+  authenticators:
+    - handler: cookie_session
+  authorizer:
+    handler: allow
+  mutators:
+    - handler: id_token
+  errors:
+    - handler: json
+
+- id: "backend-api-me-rule"
+  upstream:
+    preserve_host: true
+    url: "http://vault-backend:8080"
+  match:
+    url: "https://api.ory-vault.test/api/me"
+    methods: ["GET"]
   authenticators:
     - handler: cookie_session
   authorizer:
