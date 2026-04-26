@@ -1,55 +1,55 @@
-# Pelan: Lelaran 0007 - Delegasi & Integrasi Pihak Ketiga (Ory Hydra) - FINAL
+# Iteration 0007: OAuth2 Delegation & Unified Node Architecture
 
-## 1. Objektif
-Mengimplementasikan delegasi akses menggunakan Ory Hydra untuk mengizinkan aplikasi pihak ketiga (Web/Mobile) maupun integrasi server-to-server (Script/Bot) mengakses DMS secara aman menggunakan protokol OAuth2.
+## Status: COMPLETED ✅
+**Date:** 2026-04-27
 
-## 2. Arsitektur & Keputusan Teknis
-- **Login & Consent Bridge**: Go Backend bertindak sebagai wrapper aman untuk Hydra Admin API. Frontend Next.js memanggil Backend, bukan Hydra Admin langsung.
-- **Dual-Auth Strategy (Oathkeeper)**: Satu rule API mendukung `cookie_session` (UI) dan `oauth2_introspection` (Third-party).
-- **Scope Enforcement**: Middleware Go memvalidasi scope `nodes.read`, `nodes.write`, dan `nodes.share` dari JWT claims.
-- **Client Management**: Implementasi Self-Service UI agar user bisa mendaftarkan aplikasi mereka sendiri. Data kepemilikan dicatat di tabel `app.oauth2_clients`.
-- **Subject Mapping**: Untuk *Client Credentials Flow*, middleware akan memetakan `client_id` ke `owner_id` (pendaftar aplikasi) agar pengecekan Keto tetap berfungsi.
+## Goal
+Implement a secure, scalable OAuth2 delegation system using Ory Hydra and refactor the core storage into a Unified Node Architecture.
 
-## 3. Langkah Implementasi
+## Completed Tasks
+- [x] **Unified Node Architecture**: Consolidate files and folders into `app.nodes` table.
+- [x] **Server-side Logic**: Implement atomic sorting, pagination (offset-based), and soft delete.
+- [x] **Ory Hydra Integration**: Setup login/consent bridge in Go Backend.
+- [x] **Domain Separation (Added during impl)**: 
+    - `api.ory-vault.test`: First-party UI (Cookie Auth).
+    - `ext-api.ory-vault.test`: Third-party Apps (Bearer Token Auth).
+- [x] **Self-Service App Portal**: 
+    - Register/List/Delete OAuth2 Clients.
+    - **Credentials Reveal**: Show client secret only once upon creation.
+- [x] **DRY Refactor**: Centralized Axios and fetcher logic in `dms-ui/src/lib/api.ts`.
+- [x] **Testing Suite**:
+    - Postman Collection for all flows.
+    - Bun.js Test App for end-to-end integration testing.
 
-### A. Infrastruktur & Database
-- [ ] **SQL**: Buat tabel `app.oauth2_clients` (id, client_id, owner_id, created_at).
-- [ ] **Docker**: Daftarkan `HYDRA_ADMIN_URL` di `vault-backend` dan `vault-ui`.
-- [ ] **Hydra Config**: Set `urls.login` dan `urls.consent` ke endpoint UI kita.
+## Post-Implementation Retrospective (Issues & Lessons Learned)
 
-### B. Backend Bridge (Go)
-- [ ] Implementasi `POST /api/oauth2/login/accept`: Menerima `login_challenge`, validasi session Kratos, panggil Hydra `acceptLoginRequest`.
-- [ ] Implementasi `GET /api/oauth2/consent`: Menerima `consent_challenge`, panggil Hydra `getConsentRequest` untuk ambil info client/scopes.
-- [ ] Implementasi `POST /api/oauth2/consent/accept`: Kirim persetujuan user ke Hydra.
-- [ ] Implementasi `POST /api/nodes/clients`: Endpoint untuk mendaftarkan OAuth2 Client baru ke Hydra sekaligus mencatat di DB kita.
+### Issue 1: API Domain Mismatch (404 Not Found)
+- **Root Cause**: Frontend used relative paths, causing requests to hit `ory-vault.test` (UI domain) instead of `api.ory-vault.test`.
+- **Resolution**: Implemented `NEXT_PUBLIC_API_URL` environment variable and centralized Axios instance.
+- **Lesson Learned**: Always use absolute base URLs for API calls in multi-domain architectures to avoid ambiguity.
 
-### C. Frontend (Next.js)
-- [ ] **Client Registration UI**: Halaman untuk user mengelola aplikasi mereka (Create/List/Delete OAuth2 Client).
-- [ ] **Login Bridge**: Logika di `/auth/login` untuk meneruskan flow ke Hydra jika ada `login_challenge`.
-- [ ] **Consent Page (`/auth/consent`)**: UI untuk menampilkan permintaan izin akses pihak ketiga.
+### Issue 2: Next.js Build-time Environment Variables
+- **Root Cause**: `NEXT_PUBLIC_` variables were set in Docker `environment` (runtime) but not passed as `args` during `npm run build` (build-time).
+- **Resolution**: Updated `Dockerfile` to accept `ARG` and `docker-compose.yaml` to pass `args`.
+- **Lesson Learned**: Next.js bakes `NEXT_PUBLIC_` variables into the JS bundle during build; runtime env is not enough for client-side code.
 
-### D. Security & Oathkeeper
-- [ ] Konfigurasi `oauth2_introspection` di `oathkeeper.yaml`.
-- [ ] Update `rules.yaml` agar rule API memiliki dua authenticator.
-- [ ] **Scope Middleware**: Buat middleware di Go untuk validasi scope berdasarkan HTTP Method.
+### Issue 3: Oathkeeper Configuration Errors (Crash/502)
+- **Root Cause**: Attempted to use unsupported `token_from` in `oauth2_introspection` and invalid glob syntax `<(a|b)>`.
+- **Resolution**: Reverted to standard glob `<**>` and removed invalid schema keys.
+- **Lesson Learned**: RTFM (Read The Friendly Manual) for specific Ory versions. Oathkeeper is extremely strict about YAML schema.
 
-## 4. Mekanisme Testing
+### Issue 4: CSRF & Cookie Collision
+- **Root Cause**: Missing `domain` and `same_site` config in Hydra caused browser to drop cookies during cross-subdomain redirects.
+- **Resolution**: Set `same_site_mode: Lax` and `domain: ory-vault.test` in `hydra.yaml`.
+- **Lesson Learned**: Cross-subdomain authentication requires explicit cookie domain scoping (`.domain.test`) and proper SameSite policies.
 
-### Test Flow 1: Authorization Code (Aplikasi Web/Interaktif)
-1. **Initiate**: Gunakan browser untuk membuka:
-   `https://auth.ory-vault.test/oauth2/auth?client_id=<CLIENT_ID>&response_type=code&scope=nodes.read&redirect_uri=<CALLBACK>`
-2. **Login**: Harus di-redirect ke login page kita -> Login via Kratos.
-3. **Consent**: Harus muncul halaman persetujuan -> Klik "Allow".
-4. **Exchange**: Ambil `code` dari URL callback, lalu tukar ke token via `curl` ke Hydra `/oauth2/token`.
-5. **Access**: Panggil `GET /api/nodes` menggunakan `Authorization: Bearer <token>`.
-6. **Verify**: Harus return data file milik user tersebut.
+### Issue 5: Scope Middleware 403 in UI
+- **Root Cause**: Backend forced scope check for first-party cookie sessions which don't carry OAuth2 scopes.
+- **Resolution**: Updated middleware to detect Kratos `session` claim and bypass scope checks for UI requests.
+- **Lesson Learned**: Distinguish between First-party (Identity-based) and Third-party (Scope-based) access early in the middleware logic.
 
-### Test Flow 2: Client Credentials (Integrasi Script/Bot)
-1. **Request Token**: Panggil Hydra `/oauth2/token` langsung menggunakan `client_id` & `client_secret` (tanpa interaksi user).
-   `scope` yang diminta: `nodes.read nodes.write`.
-2. **Access (Success)**: Panggil `POST /api/nodes` (Create Folder) menggunakan token tersebut.
-3. **Verify owner**: Cek di DB, folder yang dibuat harus memiliki `owner_id` yang sesuai dengan user yang mendaftarkan aplikasi tersebut.
-4. **Access (Forbidden)**: Coba hapus file orang lain menggunakan token bot tersebut -> Harus return **403 Forbidden** (Keto check).
-
-## 5. Status: READY TO EXECUTE
-Semua keputusan arsitektur sudah final. Saya siap memulai dari **Task A: Infrastruktur & Database**.
+## Verification Results
+- **Backend Build**: SUCCESS (`go build ./...`)
+- **Frontend Build**: SUCCESS (`npm run build`)
+- **Flow 1 (Auth Code)**: SUCCESS (Verified via Bun App)
+- **Flow 2 (Client Credentials)**: SUCCESS (Verified via Bun App)

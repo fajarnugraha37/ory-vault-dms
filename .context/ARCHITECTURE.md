@@ -19,6 +19,11 @@
   - 4455/4456 -> Oathkeeper (Proxy)
   - 4466/4467 -> Keto (gRPC Read/Write)
 
+- **Domain Separation (Iteration 7)**:
+  - `api.ory-vault.test`: Khusus First-party (UI). Menggunakan Cookie Auth.
+  - `ext-api.ory-vault.test`: Khusus Third-party (External Apps). Menggunakan Bearer Token Auth.
+  - `auth.ory-vault.test`: SSO Hub (Login, Registration, Consent).
+
 ## 3. auth flow mechanics
 
 1. User meminta data ke `api.ory-vault.test`.
