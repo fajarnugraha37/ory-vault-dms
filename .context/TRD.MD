@@ -2,17 +2,17 @@
 
 ## 1. database schema requirements
 
-- Schema `kratos`: Tabel internal Ory Kratos.
-- Schema `keto`: Tabel relation tuples Zanzibar.
-- Schema `hydra`: Tabel token & clients OAuth2.
-- Schema `app`: Tabel `documents` (id, owner_id, file_path, metadata).
+- Schema `app`: 
+    - Tabel `nodes`: Struktur hierarki folder & file (Unified).
+    - Tabel `file_metadata`: Spesifik metadata untuk node tipe 'file'.
+- Schema `enterprise`: Tabel `audit_logs`, `roles`, `user_roles`.
 
 ## 2. keto namespaces (opl)
 
-Wajib mengimplementasikan class berikut dalam `namespaces.opl`:
+Wajib mengimplementasikan class berikut dalam `namespaces.ts`:
 
 - `User`: Subjek identitas.
-- `Document`: Resource utama. Relasi: `owners`, `viewers`, `editors`.
+- `nodes`: Resource unified (Folder/File). Relasi: `owner`, `viewer`, `editor`, `parent`.
 - `Division`: Kelompok user. Relasi: `members`, `managers`.
 
 ## 3. go-backend grpc client

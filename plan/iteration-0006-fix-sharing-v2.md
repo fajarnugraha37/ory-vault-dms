@@ -1,46 +1,35 @@
-# Pelan: Lelaran 0006 - Perbaikan Sharing & Zero Trust Hardening (v2)
+# Pelan: Lelaran 0006 - Unified Architecture & Security Hardening (Final)
 
-## 1. Masalah Utama & Analisis
-- **Masalah 1 (Editor Permission)**: User dengan role `editor` pada file yang di-share hanya melihat tombol "Download".
-    - *Punca*: Frontend (`dms-ui/src/app/dashboard/documents/page.tsx`) hanya menampilkan tombol aksi (Rename, Move, Share, Delete) jika `activeTab === "owned"`.
-    - *Punca Tambahan*: Backend tidak mengirimkan informasi role/permission untuk setiap item dalam list.
-- **Masalah 2 (Shared Folder Content)**: Isi folder yang di-share tidak muncul.
-    - *Punca*: Handler `ListFolders` dan `ListDocuments` di Go hanya mengambil item yang dimiliki user (`owner_id = userID`).
-    - *Punca Tambahan*: Keto `ListRelationships` hanya mengembalikan item yang di-share secara langsung, tidak termasuk child item yang diwarisi (inheritance) lewat folder.
+## 1. Ringkasan Perubahan
+Lelaran ini berevolusi dari sekadar perbaikan bug sharing menjadi refaktor arsitektur besar-besaran untuk skalabilitas dan keamanan (Zero Trust).
 
-## 2. Strategi Perbaikan
+## 2. Fitur yang Diimplementasikan
 
-### A. Backend (Go)
-1.  **Store Extension**:
-    - Tambah method `ListFoldersByParent(ctx, parentID)` dan `ListDocumentsByFolder(ctx, folderID)` di `postgres.go` yang tidak memfilter berdasarkan `owner_id`.
-2.  **Handler Logic Update**:
-    - Di `ListFolders` dan `ListDocuments`:
-        - Jika `parent_id`/`folder_id` diberikan:
-            - Lakukan Keto `CheckPermission(..., "view", ...)` untuk folder tersebut.
-            - Jika diizinkan, ambil SEMUA isi folder tersebut menggunakan method store baru.
-        - Jika `parent_id` NIL (Root):
-            - Ambil owned items (seperti sekarang).
-            - Ambil shared items (seperti sekarang).
-3.  **Permission Enrichment**:
-    - Tambahkan field `UserPermission` (string: "owner", "editor", "viewer") pada response JSON Document dan Folder.
-    - Untuk owned items, set "owner".
-    - Untuk shared items, ambil relation dari Keto `ListRelationships`.
+### A. Arsitektur Unified Nodes (Refaktor Besar)
+- [x] **Penyatuan Tabel**: Menggabungkan tabel `folders` dan `documents` menjadi satu tabel `app.nodes`.
+- [x] **Metadata Extension**: Data spesifik file dipindah ke `app.file_metadata`.
+- [x] **Recursive Cleanup**: Penghapusan folder sekarang otomatis menghapus seluruh isi (file/subfolder) di DB dan MinIO secara rekursif.
+- [x] **Soft Delete**: Implementasi flag `is_deleted` untuk semua resource.
 
-### B. Frontend (Next.js)
-1.  **Interface Update**:
-    - Update type `Document` dan `Folder` untuk menyertakan `user_permission`.
-2.  **Action Rendering**:
-    - Ganti pengecekan `activeTab === "owned"` dengan pengecekan `item.user_permission === 'owner' || item.user_permission === 'editor'`.
+### B. Security & Zero Trust (Hardening)
+- [x] **FAIL-FAST Envs**: Seluruh ENV memiliki default "SALAH" untuk mendeteksi miskonfigurasi sejak startup.
+- [x] **Keto Unification**: Menggunakan namespace tunggal `nodes` di Keto untuk permission terpusat.
+- [x] **Anti-IDOR**: Seluruh endpoint (Download, Rename, Move, Delete) wajib lolos cek Keto. Akses publik wajib menggunakan token `sig_...` (UUID dilarang).
+- [x] **Audit Trail**: Menambahkan field `created_by`, `updated_by`, dan `deleted_by` pada setiap node.
 
-## 3. Langkah Eksekusi
-1.  **Task 1**: Modifikasi `dms-backend/internal/store/postgres.go` untuk menambah query list tanpa filter owner. (DONE)
-2.  **Task 2**: Modifikasi `dms-backend/internal/handler/folder.go` untuk logika list baru + enrichment role. (DONE)
-3.  **Task 3**: Modifikasi `dms-backend/internal/handler/document.go` untuk logika list baru + enrichment role. (DONE)
-4.  **Task 4**: Update `dms-ui/src/app/dashboard/documents/page.tsx` untuk menampilkan aksi berdasarkan role. (DONE)
+### C. Skalabilitas & UI/UX
+- [x] **Server-Side Sorting**: Pengurutan (Nama, Tipe, Tanggal, Ukuran) dilakukan di level Postgres.
+- [x] **Strict Pagination**: Implementasi limit (max 100) dan offset untuk mencegah overload memory.
+- [x] **UI Improvements**: 
+  - Tombol **Copy ID** (Fingerprint icon) untuk memudahkan input UUID.
+  - Tombol **ROOT** pada dialog Move.
+  - Kolom **Created** dan **Modified** pada tabel utama.
 
-## 4. Validasi
-- [x] Share Folder F1 (Editor) ke User B.
-- [x] User B buka F1 -> Harus melihat isi F1 (File/Folder di dalamnya).
-- [x] User B pada File di dalam F1 -> Harus melihat tombol Rename/Delete (karena mewarisi Editor).
-- [x] Share File File1 (Viewer) ke User C.
-- [x] User C pada File1 -> Hanya melihat tombol Download.
+## 3. Evaluasi Kelengkapan
+- [x] API Admin (Identity management) dipulihkan setelah refaktor.
+- [x] Legacy Aliasing (/api/folders, /api/documents) diaktifkan untuk kompatibilitas.
+- [x] Build Backend (Go) & Frontend (Next.js) diverifikasi sukses.
+- [x] Migrasi SQL disediakan (`contrib/db/migration_unified_nodes.sql`).
+
+## 4. Status: SELESAI
+Sistem sekarang stabil, scalable, dan siap untuk Iterasi 0007 (Delegation & OAuth2).

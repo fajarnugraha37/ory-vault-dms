@@ -40,14 +40,15 @@
 1. communication: Go to Keto MUST use gRPC (Port 4466/4467).
 2. proxy: Oathkeeper is the ONLY entry point to dms-backend.
 3. authentication: Based on shared cookies for `.ory-vault.test`.
-4. authorization: Zanzibar model (OPL) via Ory Keto.
-5. code style: Go 1.22 allowed to use the library and avoid DIY
+4. authorization: Zanzibar model via Ory Keto (nodes namespace).
+5. data safety: Mandatory Soft Delete (`is_deleted`) for all nodes.
+6. fail-fast: Environment variables MUST have invalid defaults to prevent silent config failure.
 
 ## infrastructure invariants
 
 - database: postgres:16-alpine.
 - networks: all services on `ory-network` (bridge).
-- ingress: nginx:alpine (port 80).
+- ingress: nginx:alpine (port 80/443).
 - iam components: kratos v1.1, keto v0.11, hydra v2.2, oathkeeper v0.40.
 
 ## database routing (isolation)
@@ -55,7 +56,7 @@
 - database name: `ory_vault`.
 - kratos: schema `kratos` (search_path=kratos).
 - keto: schema `keto` (search_path=keto).
-- backend app: schema `app` (search_path=app).
+- backend app: schema `app`, `enterprise` (search_path=enterprise, app, public).
 
 ## domain & routing
 

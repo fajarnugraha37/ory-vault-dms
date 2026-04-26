@@ -26,5 +26,16 @@
 3. Oathkeeper bertanya ke Kratos: "Apakah cookie ini punya session?"
 4. Jika ya, Oathkeeper mentransformasi session menjadi **Signed RS256 JWT (ID Token)** dan meneruskan ke Go Backend.
 5. Go Backend memvalidasi signature JWT secara kriptografis (Zero Trust) dan mengekstrak subjek identitas.
-6. Go Backend bertanya ke Keto via gRPC: "Apakah subjek dari JWT ini boleh baca Dokumen A?"
- A?"
+## 4. data model: unified nodes
+
+Untuk mendukung skalabilitas dan sorting yang efisien, sistem menggunakan model **Unified Nodes**:
+
+- **Tabel `app.nodes`**: Menyimpan struktur hierarki (folder dan file) dalam satu tabel. Mendukung Server-Side Sorting dan Pagination.
+- **Tabel `app.file_metadata`**: Extension table untuk menyimpan metadata spesifik file (mime_type, size, storage_path).
+- **Soft Delete**: Seluruh resource menggunakan flag `is_deleted` untuk keamanan data. Penghapusan folder bersifat rekursif terhadap seluruh isinya (database & MinIO).
+
+## 5. security invariants (zero trust)
+
+1. **Anti-IDOR**: Backend TIDAK PERNAH mempercayai ID dari URL. Setiap request wajib divalidasi via Keto CheckPermission (nodes namespace).
+2. **Secure Signal**: Akses publik menggunakan token non-guessable `sig_...`. Direct access menggunakan UUID file dilarang.
+3. **Fail-Fast**: Aplikasi akan crash saat startup jika konfigurasi keamanan (Keto URL, Secret) tidak ditemukan di environment.
