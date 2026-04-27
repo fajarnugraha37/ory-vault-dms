@@ -70,8 +70,10 @@ membangun **ory-vault**, sebuah dms yang menggunakan ekosistem ory secara utuh. 
 
 ---
 
-## further notes
+## system status (iteration 8 update)
 
-* **junior dev focus**: pengembang hanya perlu fokus pada penulisan middleware di go yang membaca header `X-User-Id` dan memanggil gRPC keto. jangan biarkan pengembang memodifikasi konfigurasi `oathkeeper.yaml` tanpa supervisi architect.
-* **ai agent usage**: gunakan file `GEMINI.md` dan `MASTER_SPEC.md` untuk mengunci konteks agen agar tidak terjadi "config drift".
+- **Production Hardened**: Images pinned, security headers active, and structured logging (`slog`) implemented.
+- **Trash Recovery**: Soft-delete and restoration cycle fully functional.
+- **Identity Control**: Comprehensive Admin and Self-Service portals for identity management.
+- **Modular Design**: Entire UI transitioned to a Neo-Brutalist design system.
 .

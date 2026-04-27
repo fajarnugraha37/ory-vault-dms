@@ -31,7 +31,16 @@
 3. Oathkeeper bertanya ke Kratos: "Apakah cookie ini punya session?"
 4. Jika ya, Oathkeeper mentransformasi session menjadi **Signed RS256 JWT (ID Token)** dan meneruskan ke Go Backend.
 5. Go Backend memvalidasi signature JWT secara kriptografis (Zero Trust) dan mengekstrak subjek identitas.
-## 4. data model: unified nodes
+## 4. frontend architecture (modular ui)
+
+Sistem menggunakan **Next.js 16 (App Router)** dengan arsitektur modular yang memisahkan antara logika dan visual:
+
+- **Design Primitives**: Centralized visual language (Neo-Brutalist) di `src/components/shared/VaultPrimitives.tsx`.
+- **Contextual State**: `VaultProvider` (React Context) mengelola navigasi folder, sorting, dan pagination secara global di dashboard.
+- **SWR Strategy**: Sinkronisasi data server-client yang efisien dengan invalidasi cache otomatis setelah mutasi (upload/delete/move).
+- **Hardened Forms**: `AuthForm.tsx` mengelola CSRF token dan mapping error Ory secara otomatis.
+
+## 5. data model: unified nodes
 
 Untuk mendukung skalabilitas dan sorting yang efisien, sistem menggunakan model **Unified Nodes**:
 
