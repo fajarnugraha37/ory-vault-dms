@@ -2,7 +2,7 @@ package store
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"github.com/nugra/ory-vault/dms-backend/internal/kratos"
 )
 
@@ -13,11 +13,11 @@ func (s *Store) SeedSystem(k *kratos.Client) error {
 	identities, _, err := k.ListIdentities(ctx, 1, "")
 	if err != nil { return err }
 	if len(identities) > 0 {
-		log.Println("SEEDER: Identity store not empty, skipping bootstrap.")
+		slog.Info("Identity store not empty, skipping bootstrap seeder.")
 		return nil
 	}
 
-	log.Println("SEEDER: Empty system detected. Starting DMS bootstrap...")
+	slog.Info("Empty system detected. Starting DMS bootstrap seeder...")
 
 	// 2. Ensure basic roles exist in DB
 	s.CreateRole(ctx, "admin", "System Administrator with full access")
@@ -50,19 +50,19 @@ func (s *Store) SeedSystem(k *kratos.Client) error {
 	for _, u := range users {
 		id, err := k.CreateIdentityWithPassword(ctx, u.Email, u.Password, "default", u.Traits)
 		if err != nil {
-			log.Printf("SEEDER_ERROR: Failed to create %s: %v", u.Email, err)
+			slog.Error("Failed to seed identity", "email", u.Email, "error", err)
 			continue
 		}
-		
+
 		if u.Role != "" {
 			err = s.AssignRole(ctx, id.Id, u.Role)
 			if err != nil {
-				log.Printf("SEEDER_ERROR: Failed to assign role to %s: %v", u.Email, err)
+				slog.Error("Failed to assign bootstrap role", "email", u.Email, "role", u.Role, "error", err)
 			}
 		}
-		log.Printf("SEEDER_SUCCESS: Bootstrapped account %s", u.Email)
+		slog.Info("Bootstrap identity initialized", "email", u.Email, "role", u.Role)
 	}
 
-	log.Println("SEEDER: System bootstrap completed.")
+	slog.Info("System bootstrap sequence completed.")
 	return nil
 }

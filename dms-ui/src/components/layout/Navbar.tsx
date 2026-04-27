@@ -77,7 +77,7 @@ export const Navbar = ({ actions }: NavbarProps) => {
           {module.icon}
         </div>
         <span className="font-black text-2xl tracking-tighter uppercase italic">
-          {module.title} <span className="text-slate-300">DMS {me.roles}</span>
+          {module.title} <span className="text-slate-300">DMS</span>
         </span>
       </Link>
 

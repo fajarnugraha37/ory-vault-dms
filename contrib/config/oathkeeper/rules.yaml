@@ -15,6 +15,22 @@
   errors:
     - handler: json
 
+- id: "backend-public-rule"
+  upstream:
+    preserve_host: true
+    url: "http://vault-backend:8080"
+  match:
+    url: "https://api.ory-vault.test/public-api/<**>"
+    methods: ["GET"]
+  authenticators:
+    - handler: noop
+  authorizer:
+    handler: allow
+  mutators:
+    - handler: noop
+  errors:
+    - handler: json
+
 # --- First-Party API (UI Usage via api.ory-vault.test) ---
 # Authenticator: COOKIE ONLY. No scope check.
 - id: "first-party-api-rule"

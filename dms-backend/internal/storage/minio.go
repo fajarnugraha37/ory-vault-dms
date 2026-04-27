@@ -3,7 +3,7 @@ package storage
 import (
 	"context"
 	"io"
-	"log"
+	"log/slog"
 
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
@@ -26,7 +26,7 @@ func NewMinioStorage(endpoint, accessKey, secretKey, bucketName string) (*Storag
 	if errBucketExists == nil && !exists {
 		err = minioClient.MakeBucket(ctx, bucketName, minio.MakeBucketOptions{Region: "us-east-1"})
 		if err != nil { return nil, err }
-		log.Printf("STORAGE: Created bucket %s\n", bucketName)
+		slog.Info("Storage bucket created", "bucket", bucketName)
 	}
 
 	return &Storage{client: minioClient, bucket: bucketName}, nil

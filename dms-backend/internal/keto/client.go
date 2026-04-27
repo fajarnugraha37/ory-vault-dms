@@ -3,7 +3,7 @@ package keto
 import (
 	"context"
 	"errors"
-	"log"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -61,16 +61,16 @@ func NewClient(readAddr, writeAddr string) *Client {
 	writeAddr = strings.TrimPrefix(writeAddr, "http://")
 	writeAddr = strings.TrimPrefix(writeAddr, "https://")
 
-	log.Printf("KETO_INIT: gRPC Read: %s, Write: %s", readAddr, writeAddr)
+	slog.Info("Initializing Keto gRPC Clients", "read", readAddr, "write", writeAddr)
 
 	readConn, err := grpc.Dial(readAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
-		log.Printf("KETO_ERROR: Dial Read failed: %v", err)
+		slog.Error("Dial Keto Read failed", "error", err)
 	}
 
 	writeConn, err := grpc.Dial(writeAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
-		log.Printf("KETO_ERROR: Dial Write failed: %v", err)
+		slog.Error("Dial Keto Write failed", "error", err)
 	}
 
 	return &Client{
@@ -102,7 +102,7 @@ func (c *Client) CheckPermission(ctx context.Context, namespace, object, relatio
 		Subject:   &acl.Subject{Ref: &acl.Subject_Id{Id: subject}},
 	})
 	if err != nil {
-		log.Printf("KETO_ERROR: Check failed: %v", err)
+		slog.Error("Keto Check failed", "error", err, "ns", namespace, "obj", object)
 		c.breaker.RecordFailure()
 		return false, err
 	}
@@ -131,7 +131,7 @@ func (c *Client) CreateRelationship(ctx context.Context, namespace, object, rela
 		},
 	})
 	if err != nil {
-		log.Printf("KETO_ERROR: CreateRelationship failed: %v", err)
+		slog.Error("Keto CreateRelationship failed", "error", err)
 		c.breaker.RecordFailure()
 		return err
 	}
@@ -160,7 +160,7 @@ func (c *Client) DeleteRelationship(ctx context.Context, namespace, object, rela
 		},
 	})
 	if err != nil {
-		log.Printf("KETO_ERROR: DeleteRelationship failed: %v", err)
+		slog.Error("Keto DeleteRelationship failed", "error", err)
 		c.breaker.RecordFailure()
 		return err
 	}
@@ -187,7 +187,7 @@ func (c *Client) ListRelationships(ctx context.Context, namespace, object, subje
 		Query: query,
 	})
 	if err != nil {
-		log.Printf("KETO_ERROR: ListRelationships failed: %v", err)
+		slog.Error("Keto ListRelationships failed", "error", err)
 		c.breaker.RecordFailure()
 		return nil, err
 	}

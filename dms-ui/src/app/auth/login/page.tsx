@@ -53,7 +53,7 @@ function LoginContent() {
           setError("Infrastructure connection failed");
         });
     }
-  }, [flowId, router, searchParams]);
+  }, [flowId, router]); // Only track flowId and router
 
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault();

@@ -2,7 +2,7 @@ package kratos
 
 import (
 	"context"
-	"log"
+	"log/slog"
 
 	client "github.com/ory/kratos-client-go"
 )
@@ -22,7 +22,7 @@ func (c *Client) GetAPI() *client.APIClient {
 }
 
 func (c *Client) GetIdentity(ctx context.Context, id string) (*client.Identity, error) {
-	log.Printf("KRATOS_OFFICIAL: Fetching identity %s", id)
+	slog.Debug("Fetching identity from Kratos", "identity_id", id)
 	identity, _, err := c.api.IdentityAPI.GetIdentity(ctx, id).Execute()
 	return identity, err
 }
@@ -45,7 +45,7 @@ func (c *Client) ListIdentities(ctx context.Context, pageSize int64, pageToken s
 }
 
 func (c *Client) CreateIdentityWithPassword(ctx context.Context, email, password, schema string, traits map[string]interface{}) (*client.Identity, error) {
-	log.Printf("KRATOS_OFFICIAL: Seeding identity %s", email)
+	slog.Info("Creating identity with password", "email", email)
 	if traits == nil { traits = make(map[string]interface{}) }
 	traits["email"] = email
 
@@ -66,7 +66,7 @@ func (c *Client) CreateIdentityWithPassword(ctx context.Context, email, password
 }
 
 func (c *Client) PatchIdentity(ctx context.Context, id string, patches []client.JsonPatch) error {
-	log.Printf("KRATOS_OFFICIAL: Patching identity %s", id)
+	slog.Info("Patching identity", "identity_id", id)
 	_, _, err := c.api.IdentityAPI.PatchIdentity(ctx, id).JsonPatch(patches).Execute()
 	return err
 }

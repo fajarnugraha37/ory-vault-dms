@@ -2,7 +2,7 @@ package store
 
 import (
 	"database/sql"
-	"log"
+	"log/slog"
 
 	_ "github.com/lib/pq"
 )
@@ -23,7 +23,7 @@ func NewPostgresStore(dsn string) (*Store, error) {
 
 	// Hardened search_path as per protocol
 	if _, err := db.Exec("SET search_path TO enterprise, app, public"); err != nil {
-		log.Printf("DB_WARN: Failed to set search_path: %v", err)
+		slog.Warn("Failed to set database search_path", "error", err)
 	}
 
 	return &Store{db: db}, nil

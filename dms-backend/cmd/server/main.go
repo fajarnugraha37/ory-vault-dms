@@ -1,7 +1,7 @@
 package main
 
 import (
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 
@@ -15,12 +15,18 @@ import (
 )
 
 func main() {
-	// Menghapus default value yang benar agar sistem langsung gagal jika env tidak di-set
+	// 0. Setup structured JSON logger
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+		Level: slog.LevelInfo,
+	}))
+	slog.SetDefault(logger)
+
+	// 1. Hardened Environment Validation
 	kratosAdminURL := os.Getenv("KRATOS_ADMIN_URL")
-	if kratosAdminURL == "" { kratosAdminURL = "http://REQUIRED_CONFIG_MISSING_KRATOS_ADMIN_URL" }
+	if kratosAdminURL == "" { kratosAdminURL = "REQUIRED_CONFIG_MISSING_KRATOS_ADMIN_URL" }
 
 	hydraAdminURL := os.Getenv("HYDRA_ADMIN_URL")
-	if hydraAdminURL == "" { hydraAdminURL = "http://REQUIRED_CONFIG_MISSING_HYDRA_ADMIN_URL" }
+	if hydraAdminURL == "" { hydraAdminURL = "REQUIRED_CONFIG_MISSING_HYDRA_ADMIN_URL" }
 
 	ketoReadURL := os.Getenv("KETO_READ_URL")
 	if ketoReadURL == "" { ketoReadURL = "REQUIRED_CONFIG_MISSING_KETO_READ_URL" }
@@ -29,11 +35,10 @@ func main() {
 	if ketoWriteURL == "" { ketoWriteURL = "REQUIRED_CONFIG_MISSING_KETO_WRITE_URL" }
 
 	jwksURL := os.Getenv("JWKS_URL")
-	if jwksURL == "" { jwksURL = "http://REQUIRED_CONFIG_MISSING_JWKS_URL" }
+	if jwksURL == "" { jwksURL = "REQUIRED_CONFIG_MISSING_JWKS_URL" }
 
-	// Mengembalikan ke DSN (bukan DATABASE_URL)
 	postgresDSN := os.Getenv("DSN")
-	if postgresDSN == "" { postgresDSN = "postgres://REQUIRED_CONFIG_MISSING_DSN" }
+	if postgresDSN == "" { postgresDSN = "REQUIRED_CONFIG_MISSING_DSN" }
 
 	storageEndpoint := os.Getenv("STORAGE_ENDPOINT")
 	if storageEndpoint == "" { storageEndpoint = "REQUIRED_CONFIG_MISSING_STORAGE_ENDPOINT" }
@@ -44,40 +49,42 @@ func main() {
 	storageSecretKey := os.Getenv("STORAGE_SECRET_KEY")
 	if storageSecretKey == "" { storageSecretKey = "REQUIRED_CONFIG_MISSING_STORAGE_SECRET_KEY" }
 
-	// 1. Init SQL Store
+	// 2. Init SQL Store
 	s, err := store.NewPostgresStore(postgresDSN)
 	if err != nil { 
-		log.Fatalf("CRITICAL: Failed to connect to DB. Check your DSN environment variable. Error: %v", err) 
+		slog.Error("Failed to connect to database", "error", err, "dsn", "provided")
+		os.Exit(1)
 	}
 	defer s.Close()
 
-	// 2. Init Kratos, Keto & Hydra Clients
+	// 3. Init Ory & Storage Clients
 	k := kratos.NewClient(kratosAdminURL)
 	kc := keto.NewClient(ketoReadURL, ketoWriteURL)
 	hy := hydra.NewClient(hydraAdminURL)
-
-	// 3. Init MinIO Storage
 	st, err := storage.NewMinioStorage(storageEndpoint, storageAccessKey, storageSecretKey, "dms-vault")
 	if err != nil {
-		log.Fatalf("CRITICAL: Failed to connect to MinIO Storage. Check your STORAGE_* environment variables. Error: %v", err)
+		slog.Error("Failed to connect to MinIO Storage", "error", err)
+		os.Exit(1)
 	}
 
-	// 4. AUTO SEEDING (Bootstrap)
+	// 4. Auto Seeding (Bootstrap)
 	if err := s.SeedSystem(k); err != nil {
-		log.Printf("SEEDER_WARNING: Bootstrap process encountered issues: %v", err)
+		slog.Warn("Seeder encountered warnings", "error", err)
 	}
 
 	// 5. Init JWKS Fetcher
 	kf, err := keyfunc.NewDefault([]string{jwksURL})
 	if err != nil { 
-		log.Fatalf("CRITICAL: Failed to init JWKS fetcher. Check your JWKS_URL. Error: %v", err) 
+		slog.Error("Failed to initialize JWKS fetcher", "error", err, "url", jwksURL)
+		os.Exit(1)
 	}
 
 	// 6. Start Router
 	router := api.NewRouter(s, k, st, kc, kf, hy)
 
-	log.Println("DMS Backend started on :8080")
+	slog.Info("DMS Backend Server Initialized", "port", "8080", "node", "hardened-go-01")
 	if err := http.ListenAndServe(":8080", router); err != nil {
-		log.Fatalf("Server failed: %v", err)
+		slog.Error("Server shutdown unexpectedly", "error", err)
+		os.Exit(1)
 	}
 }

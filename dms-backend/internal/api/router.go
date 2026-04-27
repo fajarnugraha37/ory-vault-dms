@@ -2,7 +2,7 @@ package api
 
 import (
 	"encoding/json"
-	"log"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -34,15 +34,15 @@ func NewRouter(s *store.Store, k *kratos.Client, st *storage.Storage, kc *keto.C
 	oauth2Handler := handler.NewOAuth2Handler(s, hy)
 
 	// --- PUBLIC ROUTES ---
-	r.Get("/api/public/documents/{token}", docHandler.DownloadPublicDocument)
-	r.Get("/api/public/documents/{token}/metadata", docHandler.GetPublicMetadata)
+	r.Get("/public-api/documents/{token}", docHandler.DownloadPublicDocument)
+	r.Get("/public-api/documents/{token}/metadata", docHandler.GetPublicMetadata)
 
 	// OAuth2 Public Bridge (No AuthMiddleware)
 	r.Get("/api/oauth2/login", oauth2Handler.GetLoginRequest)
 	r.Get("/api/oauth2/consent", oauth2Handler.GetConsentRequest)
 
 	r.NotFound(func(w http.ResponseWriter, r *http.Request) {
-		log.Printf("DEBUG 404: Route Not Found -> %s %s", r.Method, r.URL.Path)
+		slog.Warn("Route not found", "method", r.Method, "path", r.URL.Path)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
 		json.NewEncoder(w).Encode(map[string]string{"error": "Route not found in DMS Backend"})
@@ -53,11 +53,11 @@ func NewRouter(s *store.Store, k *kratos.Client, st *storage.Storage, kc *keto.C
 	// --- PROTECTED ROUTES ---
 	r.Route("/api", func(r chi.Router) {
 		r.Use(internal_mw.AuthMiddleware(kf))
-		
+
 		r.Get("/me", func(w http.ResponseWriter, r *http.Request) {
 			userID := r.Context().Value(internal_mw.UserIDKey).(string)
 			roles, _ := s.GetUserRoles(r.Context(), userID)
-			
+
 			// Bootstrap admin check
 			identity, err := k.GetIdentity(r.Context(), userID)
 			if err == nil {
@@ -65,8 +65,15 @@ func NewRouter(s *store.Store, k *kratos.Client, st *storage.Storage, kc *keto.C
 				email, _ := traits["email"].(string)
 				if strings.HasSuffix(email, "@ory-vault.test") {
 					isAdmin := false
-					for _, r := range roles { if r == "admin" { isAdmin = true; break } }
-					if !isAdmin { roles = append(roles, "admin") }
+					for _, r := range roles {
+						if r == "admin" {
+							isAdmin = true
+							break
+						}
+					}
+					if !isAdmin {
+						roles = append(roles, "admin")
+					}
 				}
 			}
 
@@ -116,7 +123,7 @@ func NewRouter(s *store.Store, k *kratos.Client, st *storage.Storage, kc *keto.C
 			r.With(internal_mw.RequirePermission(kc, "nodes", "owner")).Delete("/{id}/public-link", docHandler.RevokePublicLink)
 		})
 	})
-	
+
 	r.Route("/admin-api", func(r chi.Router) {
 		r.Use(internal_mw.AuthMiddleware(kf))
 		r.Use(internal_mw.AdminOnly(s, k))
@@ -140,12 +147,12 @@ func NewRouter(s *store.Store, k *kratos.Client, st *storage.Storage, kc *keto.C
 		r.Post("/identities/{id}/verify", adminHandler.PostVerify)
 		r.Post("/identities/{id}/impersonate", adminHandler.ImpersonateSubject)
 		r.Put("/identities/{id}/schema", adminHandler.SwitchIdentitySchema)
-		
+
 		// --- User Role Assignments ---
 		r.Get("/identities/{id}/roles", adminHandler.GetUserRoles)
 		r.Post("/identities/{id}/roles", adminHandler.AssignUserRole)
 		r.Delete("/identities/{id}/roles/{roleID}", adminHandler.RemoveUserRole)
-		
+
 		// --- Session Management ---
 		r.Get("/identities/{id}/sessions", adminHandler.ListSessions)
 		r.Delete("/identities/{id}/sessions", adminHandler.RevokeAllSessions)
