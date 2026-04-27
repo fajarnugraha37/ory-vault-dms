@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/MicahParks/keyfunc/v3"
@@ -55,8 +56,26 @@ func NewRouter(s *store.Store, k *kratos.Client, st *storage.Storage, kc *keto.C
 		
 		r.Get("/me", func(w http.ResponseWriter, r *http.Request) {
 			userID := r.Context().Value(internal_mw.UserIDKey).(string)
+			roles, _ := s.GetUserRoles(r.Context(), userID)
+			
+			// Bootstrap admin check
+			identity, err := k.GetIdentity(r.Context(), userID)
+			if err == nil {
+				traits, _ := identity.Traits.(map[string]interface{})
+				email, _ := traits["email"].(string)
+				if strings.HasSuffix(email, "@ory-vault.test") {
+					isAdmin := false
+					for _, r := range roles { if r == "admin" { isAdmin = true; break } }
+					if !isAdmin { roles = append(roles, "admin") }
+				}
+			}
+
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]string{"user_id": userID, "message": "Verified"})
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"user_id": userID,
+				"roles":   roles,
+				"message": "Verified",
+			})
 		})
 
 		// OAuth2 Internal Bridge (Behind AuthMiddleware)
@@ -76,6 +95,7 @@ func NewRouter(s *store.Store, k *kratos.Client, st *storage.Storage, kc *keto.C
 			r.With(internal_mw.RequirePermission(kc, "nodes", "view")).Get("/{id}/access", nodeHandler.ListNodeAccess)
 			r.With(internal_mw.RequirePermission(kc, "nodes", "edit")).Put("/{id}/rename", nodeHandler.RenameNode)
 			r.With(internal_mw.RequirePermission(kc, "nodes", "owner")).Put("/{id}/move", nodeHandler.MoveNode)
+			r.With(internal_mw.RequirePermission(kc, "nodes", "owner")).Put("/{id}/restore", nodeHandler.RestoreNode)
 			r.With(internal_mw.RequirePermission(kc, "nodes", "delete")).Delete("/{id}", nodeHandler.SoftDeleteNode)
 			r.With(internal_mw.RequirePermission(kc, "nodes", "owner")).Post("/{id}/share", nodeHandler.ShareNode)
 			r.With(internal_mw.RequirePermission(kc, "nodes", "owner")).Delete("/{id}/share/{userId}", nodeHandler.RevokeShareNode)
@@ -111,7 +131,7 @@ func NewRouter(s *store.Store, k *kratos.Client, st *storage.Storage, kc *keto.C
 		r.Post("/roles", adminHandler.CreateRole)
 		r.Delete("/roles/{roleID}", adminHandler.DeleteRole)
 
-		// --- Individual Identity Ops (RESTORED) ---
+		// --- Individual Identity Ops ---
 		r.Get("/identities/{id}", adminHandler.GetIdentity)
 		r.Delete("/identities/{id}", adminHandler.DeleteIdentity)
 		r.Put("/identities/{id}/state", adminHandler.PatchState)

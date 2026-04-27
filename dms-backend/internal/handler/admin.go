@@ -34,15 +34,46 @@ func (h *AdminHandler) respondWithError(w http.ResponseWriter, code int, message
 
 // --- Identities & Pagination ---
 
+type identityResponse struct {
+	ID            string                 `json:"id"`
+	State         string                 `json:"state"`
+	Traits        map[string]interface{} `json:"traits"`
+	MetadataAdmin map[string]interface{} `json:"metadata_admin"`
+	CreatedAt     string                 `json:"created_at"`
+}
+
 func (h *AdminHandler) ListIdentities(w http.ResponseWriter, r *http.Request) {
 	pageSize, _ := strconv.ParseInt(r.URL.Query().Get("page_size"), 10, 64)
 	if pageSize <= 0 { pageSize = 50 }
 	pageToken := r.URL.Query().Get("page_token")
 	if pageToken == "0" { pageToken = "" }
 	
-	data, _, err := h.Kratos.ListIdentities(r.Context(), pageSize, pageToken)
+	data, nextPage, err := h.Kratos.ListIdentities(r.Context(), pageSize, pageToken)
 	if err != nil { h.respondWithError(w, 500, err.Error()); return }
-	h.respondWithJSON(w, 200, data)
+
+	identities := make([]identityResponse, 0)
+	for _, id := range data {
+		state := ""
+		if id.State != nil { state = string(*id.State) }
+		
+		traits, _ := id.Traits.(map[string]interface{})
+		metadata, _ := id.MetadataAdmin.(map[string]interface{})
+		if traits == nil { traits = make(map[string]interface{}) }
+		if metadata == nil { metadata = make(map[string]interface{}) }
+
+		identities = append(identities, identityResponse{
+			ID:            id.Id,
+			State:         state,
+			Traits:        traits,
+			MetadataAdmin: metadata,
+			CreatedAt:     id.CreatedAt.String(),
+		})
+	}
+	
+	h.respondWithJSON(w, 200, map[string]interface{}{
+		"identities": identities,
+		"next_page_token": nextPage,
+	})
 }
 
 func (h *AdminHandler) GetIdentity(w http.ResponseWriter, r *http.Request) {

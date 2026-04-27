@@ -118,6 +118,7 @@ serve({
         headers: { Authorization: `Bearer ${tokens.access_token}` },
       });
       const data = await apiRes.json();
+      console.log(data);
 
       return htmlResponse(
         "Success - Flow 1",

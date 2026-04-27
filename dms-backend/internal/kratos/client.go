@@ -32,9 +32,16 @@ func (c *Client) ListIdentities(ctx context.Context, pageSize int64, pageToken s
 	if pageSize > 0 { req = req.PageSize(pageSize) }
 	if pageToken != "" { req = req.PageToken(pageToken) }
 	
-	identities, _, err := req.Execute()
+	identities, resp, err := req.Execute()
 	if err != nil { return nil, "", err }
-	return identities, "", nil
+	
+	// Extract pagination from Header
+	nextPage := ""
+	if resp != nil {
+		nextPage = resp.Header.Get("X-Next-Page-Token")
+	}
+	
+	return identities, nextPage, nil
 }
 
 func (c *Client) CreateIdentityWithPassword(ctx context.Context, email, password, schema string, traits map[string]interface{}) (*client.Identity, error) {

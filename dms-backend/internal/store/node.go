@@ -132,7 +132,9 @@ func (s *Store) ListNodes(ctx context.Context, ownerID string, parentID *string,
 		args = append(args, *parentID)
 	}
 
-	if !includeDeleted {
+	if includeDeleted {
+		query += ` AND n.is_deleted = TRUE`
+	} else {
 		query += ` AND n.is_deleted = FALSE`
 	}
 
@@ -275,11 +277,18 @@ func (s *Store) MoveNode(ctx context.Context, id string, newParentID *string, us
 	return err
 }
 
-func (s *Store) SoftDeleteNode(ctx context.Context, id, userID string) error {
+func (s *Store) DeleteNode(ctx context.Context, id, userID string) error {
 	query := `UPDATE app.nodes SET is_deleted = TRUE, deleted_at = CURRENT_TIMESTAMP, deleted_by = $1 WHERE id = $2 OR parent_id = $2`
 	_, err := s.db.ExecContext(ctx, query, userID, id)
 	return err
 }
+
+func (s *Store) RestoreNode(ctx context.Context, id string) error {
+	query := `UPDATE app.nodes SET is_deleted = FALSE, deleted_at = NULL, deleted_by = NULL WHERE id = $1`
+	_, err := s.db.ExecContext(ctx, query, id)
+	return err
+}
+
 
 func (s *Store) SetPublicLink(ctx context.Context, id, token string) error {
 	query := `UPDATE app.nodes SET public_link_token = $1 WHERE id = $2`

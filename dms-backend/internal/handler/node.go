@@ -87,6 +87,7 @@ func (h *NodeHandler) ListNodes(w http.ResponseWriter, r *http.Request) {
 	parentIDParam := r.URL.Query().Get("parent_id")
 	sortBy := r.URL.Query().Get("sort_by")
 	sortOrder := r.URL.Query().Get("sort_order")
+	showDeleted := r.URL.Query().Get("show_deleted") == "true"
 
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	if limit <= 0 || limit > 100 { limit = 50 }
@@ -108,6 +109,7 @@ func (h *NodeHandler) ListNodes(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		// (Access checks ...)
 		var role string
 		if parent.OwnerID == userID {
 			role = "owner"
@@ -126,7 +128,7 @@ func (h *NodeHandler) ListNodes(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		// 2. Fetch children
+		// 2. Fetch children (Only owned by current user if showing deleted, recursive trash not supported yet)
 		nodes, err = h.Store.ListNodesByParent(r.Context(), parentIDParam, sortBy, sortOrder, limit, offset)
 		if err != nil {
 			h.respondWithError(w, http.StatusInternalServerError, "Failed to list items")
@@ -143,7 +145,7 @@ func (h *NodeHandler) ListNodes(w http.ResponseWriter, r *http.Request) {
 		}
 	} else {
 		// ROOT Listing
-		ownedNodes, err := h.Store.ListNodes(r.Context(), userID, nil, sortBy, sortOrder, limit, offset, false)
+		ownedNodes, err := h.Store.ListNodes(r.Context(), userID, nil, sortBy, sortOrder, limit, offset, showDeleted)
 		if err != nil {
 			h.respondWithError(w, http.StatusInternalServerError, "Failed to list owned items")
 			return
@@ -152,38 +154,60 @@ func (h *NodeHandler) ListNodes(w http.ResponseWriter, r *http.Request) {
 			ownedNodes[i].UserPermission = "owner"
 		}
 
-		// Shared items
-		relations, _ := h.Keto.ListRelationships(r.Context(), "nodes", "", userID)
-		var permittedIDs []string
-		idToRelation := make(map[string]string)
-		for _, rel := range relations {
-			permittedIDs = append(permittedIDs, rel.Object)
-			idToRelation[rel.Object] = rel.Relation
-		}
-
-		sharedNodes, _ := h.Store.ListNodesFiltered(r.Context(), permittedIDs, sortBy, sortOrder, limit, offset)
-		for i := range sharedNodes {
-			sharedNodes[i].UserPermission = idToRelation[sharedNodes[i].ID]
-		}
-
-		// Merge and deduplicate
-		nodeSet := make(map[string]store.Node)
-		for _, n := range ownedNodes { nodeSet[n.ID] = n }
-		for _, n := range sharedNodes {
-			if _, exists := nodeSet[n.ID]; !exists {
-				nodeSet[n.ID] = n
+		if !showDeleted {
+			// Shared items (Don't show in Trash)
+			relations, _ := h.Keto.ListRelationships(r.Context(), "nodes", "", userID)
+			var permittedIDs []string
+			idToRelation := make(map[string]string)
+			for _, rel := range relations {
+				permittedIDs = append(permittedIDs, rel.Object)
+				idToRelation[rel.Object] = rel.Relation
 			}
-		}
 
-		for _, n := range nodeSet {
-			// Only show if at root (parent is nil)
-			if n.ParentID == nil || n.UserPermission != "owner" {
-				nodes = append(nodes, n)
+			sharedNodes, _ := h.Store.ListNodesFiltered(r.Context(), permittedIDs, sortBy, sortOrder, limit, offset)
+			for i := range sharedNodes {
+				sharedNodes[i].UserPermission = idToRelation[sharedNodes[i].ID]
 			}
+
+			// Merge and deduplicate
+			nodeSet := make(map[string]store.Node)
+			for _, n := range ownedNodes { nodeSet[n.ID] = n }
+			for _, n := range sharedNodes {
+				if _, exists := nodeSet[n.ID]; !exists {
+					nodeSet[n.ID] = n
+				}
+			}
+
+			for _, n := range nodeSet {
+				if n.ParentID == nil || n.UserPermission != "owner" {
+					nodes = append(nodes, n)
+				}
+			}
+		} else {
+			nodes = ownedNodes
 		}
 	}
 
 	h.respondWithJSON(w, http.StatusOK, nodes)
+}
+
+func (h *NodeHandler) RestoreNode(w http.ResponseWriter, r *http.Request) {
+	nodeID := chi.URLParam(r, "id")
+	userID := r.Context().Value(middleware.UserIDKey).(string)
+
+	// Only owner can restore
+	allowed, err := h.Keto.CheckPermission(r.Context(), "nodes", nodeID, "owner", userID)
+	if err != nil || !allowed {
+		h.respondWithError(w, http.StatusForbidden, "Access denied")
+		return
+	}
+
+	if err := h.Store.RestoreNode(r.Context(), nodeID); err != nil {
+		h.respondWithError(w, http.StatusInternalServerError, "Failed to restore")
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *NodeHandler) SoftDeleteNode(w http.ResponseWriter, r *http.Request) {
@@ -197,7 +221,7 @@ func (h *NodeHandler) SoftDeleteNode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Store.SoftDeleteNode(r.Context(), nodeID, userID); err != nil {
+	if err := h.Store.DeleteNode(r.Context(), nodeID, userID); err != nil {
 		h.respondWithError(w, http.StatusInternalServerError, "Failed to delete item")
 		return
 	}
