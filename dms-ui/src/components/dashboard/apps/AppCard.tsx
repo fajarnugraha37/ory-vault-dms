@@ -1,57 +1,86 @@
 "use client";
 
-import React from "react";
-import { VaultCard, VaultButton, VaultBadge } from "@/components/shared/VaultPrimitives";
-import { Fingerprint, Trash2, Copy } from "lucide-react";
+import React, { useState } from "react";
+import { 
+  VaultCard, 
+  VaultButton, 
+  VaultBadge 
+} from "@/components/shared/VaultPrimitives";
+import { 
+  Key, 
+  Trash2, 
+  Eye, 
+  EyeOff, 
+  ExternalLink,
+  Shield,
+  Layers,
+  Copy
+} from "lucide-react";
 import { toast } from "sonner";
 
-interface AppCardProps {
-  client: any;
-  onDelete: (id: string) => void;
-}
+export function AppCard({ client, onDelete }: { client: any; onDelete: (id: string) => void }) {
+  const [showSecret, setShowSecret] = useState(false);
 
-export const AppCard = ({ client, onDelete }: AppCardProps) => {
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text);
+    toast.success("Copied to clipboard");
+  };
+
   return (
-    <Card className="border-2 border-slate-200 hover:border-slate-900 rounded-2xl transition-all group bg-white">
-        <div className="p-6 flex items-center justify-between">
+    <VaultCard spotlight={true} className="overflow-hidden border-white/[0.06] bg-white/[0.02]">
+        <div className="flex justify-between items-start mb-6">
             <div className="flex items-center gap-4">
-                <div className="w-12 h-12 bg-slate-100 rounded-xl flex items-center justify-center text-slate-400 group-hover:bg-indigo-50 group-hover:text-indigo-600 transition-colors">
-                    <Fingerprint size={24} />
+                <div className="p-3 bg-accent/10 rounded-xl border border-accent/20">
+                    <Layers className="text-accent" size={20} />
                 </div>
                 <div>
-                    <h4 className="font-black text-slate-900">{client.client_name || "Unnamed Application"}</h4>
-                    <div className="flex items-center gap-2 mt-1">
-                        <code className="text-[10px] font-mono text-slate-400">{client.client_id}</code>
-                        <VaultButton variant="ghost" size="icon" className="h-4 w-4 text-slate-300" onClick={() => {navigator.clipboard.writeText(client.client_id); toast.success("ID Copied");}}>
-                            <Copy size={10} />
-                        </VaultButton>
-                    </div>
+                    <h3 className="font-semibold text-white tracking-tight">{client.client_name || "Untitled_App"}</h3>
+                    <VaultBadge className="mt-1">OAuth2_Client</VaultBadge>
                 </div>
             </div>
-            
-            <div className="flex items-center gap-3">
-                <div className="text-right mr-4 hidden md:block">
-                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Redirect_URIs</p>
-                    <div className="flex flex-col items-end gap-1 mt-1">
-                        {client.redirect_uris?.map((u: string, i: number) => (
-                            <code key={i} className="text-[8px] bg-slate-50 px-2 py-0.5 rounded border border-slate-100 text-slate-500 font-mono">{u}</code>
-                        ))}
-                    </div>
+            <VaultButton 
+                variant="destructive" 
+                size="icon" 
+                className="bg-transparent border-white/10 text-foreground-muted hover:text-red-400"
+                onClick={() => onDelete(client.client_id)}
+            >
+                <Trash2 size={16} />
+            </VaultButton>
+        </div>
+
+        <div className="space-y-4">
+            <div className="space-y-2">
+                <label className="text-[10px] font-mono text-foreground-subtle uppercase tracking-widest ml-1">Client_Identifier</label>
+                <div className="flex items-center gap-2 p-3 bg-black/40 border border-white/[0.06] rounded-xl group">
+                    <code className="text-xs font-mono text-foreground/80 truncate flex-1">{client.client_id}</code>
+                    <button onClick={() => copyToClipboard(client.client_id)} className="p-1.5 hover:text-accent transition-colors opacity-0 group-hover:opacity-100">
+                        <Copy size={14} />
+                    </button>
                 </div>
-                <VaultButton 
-                    variant="outline" 
-                    size="icon" 
-                    className="h-10 w-10 rounded-xl border-2 text-red-400 hover:text-red-600 hover:bg-red-50 hover:border-red-200"
-                    onClick={() => onDelete(client.client_id)}
-                >
-                    <Trash2 size={16} />
-                </VaultButton>
+            </div>
+
+            <div className="space-y-2">
+                <label className="text-[10px] font-mono text-foreground-subtle uppercase tracking-widest ml-1">Secret_Key</label>
+                <div className="flex items-center gap-2 p-3 bg-black/40 border border-white/[0.06] rounded-xl group">
+                    <code className="text-xs font-mono text-foreground/80 truncate flex-1">
+                        {showSecret ? client.client_secret : "••••••••••••••••••••••••"}
+                    </code>
+                    <button onClick={() => setShowSecret(!showSecret)} className="p-1.5 hover:text-white transition-colors">
+                        {showSecret ? <EyeOff size={14} /> : <Eye size={14} />}
+                    </button>
+                </div>
             </div>
         </div>
-    </Card>
-  );
-};
 
-// Internal local Card just to satisfy Shadcn component if needed, 
-// but we will use our Primitives mainly.
-import { Card } from "@/components/ui/card";
+        <div className="mt-6 pt-6 border-t border-white/[0.06] flex items-center justify-between">
+            <div className="flex items-center gap-2 text-[10px] font-mono text-foreground-muted uppercase">
+                <Shield size={12} />
+                Scope: nodes.read nodes.write
+            </div>
+            <button className="text-[10px] font-mono text-accent hover:text-accent-bright transition-colors uppercase tracking-widest flex items-center gap-1">
+                Details <ExternalLink size={12} />
+            </button>
+        </div>
+    </VaultCard>
+  );
+}

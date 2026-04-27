@@ -1,95 +1,82 @@
 "use client";
 
-import React from "react";
-import { UiNode, UiText } from "@ory/client";
+import React, { useEffect } from "react";
+import { UiNode } from "@ory/client";
+import { VaultButton } from "@/components/shared/VaultPrimitives";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { VaultButton } from "@/components/shared/VaultPrimitives";
-import { AlertCircle } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface AuthFormProps {
   nodes: UiNode[];
-  messages?: UiText[];
   values: Record<string, any>;
   onChange: (name: string, value: any) => void;
   onSubmit: (e: React.FormEvent) => void;
   submitLabel: string;
   isLoading?: boolean;
+  messages?: any[];
 }
 
-export const AuthForm = ({ nodes, messages, values, onChange, onSubmit, submitLabel, isLoading }: AuthFormProps) => {
-  // Automatically sync hidden fields (like csrf_token) to values state
-  React.useEffect(() => {
-    nodes.forEach(node => {
+export function AuthForm({ nodes, values, onChange, onSubmit, submitLabel, isLoading, messages }: AuthFormProps) {
+  // CRITICAL: Auto-inject CSRF and other hidden values from Ory nodes
+  useEffect(() => {
+    nodes.forEach((node) => {
       if (node.type === "input") {
-        const attr = node.attributes as any;
-        if (attr.type === "hidden" && attr.value && !values[attr.name]) {
-          onChange(attr.name, attr.value);
+        const attrs = node.attributes as any;
+        if (attrs.type === "hidden" && attrs.value && !values[attrs.name]) {
+          onChange(attrs.name, attrs.value);
         }
       }
     });
   }, [nodes]);
 
   return (
-    <div className="space-y-6">
-      {/* Global Flow Messages (e.g. Invalid Credentials) */}
+    <form onSubmit={onSubmit} className="space-y-5">
       {messages?.map((msg, i) => (
-        <div key={i} className="p-4 bg-red-50 border-2 border-red-200 rounded-xl flex items-start gap-3 animate-in fade-in slide-in-from-top-2 duration-300">
-           <AlertCircle size={16} className="text-red-600 mt-0.5 flex-shrink-0" />
-           <p className="text-red-600 text-[10px] font-black uppercase tracking-tight leading-relaxed">
-             {msg.text}
-           </p>
+        <div key={i} className={cn(
+          "p-3 rounded-lg text-xs font-medium border",
+          msg.type === "error" ? "bg-red-500/10 border-red-500/20 text-red-400" : "bg-accent/10 border-accent/20 text-accent-bright"
+        )}>
+          {msg.text}
         </div>
       ))}
 
-      <form onSubmit={onSubmit} className="space-y-6">
-        {nodes.map((node, index) => {
-          if (node.type !== "input") return null;
-          
-          const attributes = node.attributes as any;
-          const name = attributes.name;
+      {nodes.map((node, i) => {
+        if (node.type !== "input") return null;
+        const attrs = node.attributes as any;
+        if (attrs.type === "hidden") return null;
 
-          if (attributes.type === "submit") {
-            return (
-              <VaultButton
-                key={index}
-                type="submit"
-                name={name}
-                value={attributes.value}
-                disabled={isLoading}
-                className="w-full py-8 text-sm bg-slate-900 text-white shadow-xl hover:bg-slate-800 mt-2"
-              >
-                {isLoading ? "PROCESSING..." : submitLabel.toUpperCase()}
-              </VaultButton>
-            );
-          }
+        const nodeMessages = node.messages?.map(m => m.text).join(". ");
 
-          if (attributes.type === "hidden") {
-            return <input key={index} type="hidden" name={name} value={attributes.value} />;
-          }
+        return (
+          <div key={i} className="space-y-1.5">
+            <Label htmlFor={attrs.name} className="text-[10px] uppercase font-mono text-foreground-subtle ml-1">
+              {node.meta?.label?.text || attrs.name}
+            </Label>
+            <Input
+              id={attrs.name}
+              name={attrs.name}
+              type={attrs.type}
+              value={values[attrs.name] || ""}
+              onChange={(e) => onChange(attrs.name, e.target.value)}
+              required={attrs.required}
+              disabled={isLoading}
+              placeholder={node.meta?.label?.text}
+              className={cn(
+                  "bg-white/[0.03] border-white/[0.06] h-12 transition-all focus:border-accent focus:ring-1 focus:ring-accent/50",
+                  nodeMessages && "border-red-500/50"
+              )}
+            />
+            {nodeMessages && (
+              <p className="text-[10px] text-red-400 font-medium ml-1">{nodeMessages}</p>
+            )}
+          </div>
+        );
+      })}
 
-          return (
-            <div key={index} className="space-y-2">
-              <Label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-1">
-                {node.meta.label?.text || name}
-              </Label>
-              <Input
-                type={attributes.type}
-                name={name}
-                value={values[name] || attributes.value || ""}
-                onChange={(e) => onChange(name, e.target.value)}
-                className="rounded-xl border-2 font-bold h-14 focus:ring-slate-900 bg-slate-50 focus:bg-white transition-colors"
-                required={attributes.required}
-              />
-              {node.messages.map((msg, i) => (
-                <p key={i} className="text-red-500 text-[9px] font-black uppercase tracking-tighter mt-1 ml-1">
-                  {msg.text}
-                </p>
-              ))}
-            </div>
-          );
-        })}
-      </form>
-    </div>
+      <VaultButton type="submit" className="w-full h-12 mt-4" isLoading={isLoading}>
+        {submitLabel.toUpperCase()}
+      </VaultButton>
+    </form>
   );
-};
+}

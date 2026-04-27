@@ -1,166 +1,105 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import {
-  VaultCard,
-  VaultButton,
-  VaultHeader,
-} from "@/components/shared/VaultPrimitives";
-import { File, DownloadCloud, AlertCircle, ShieldCheck } from "lucide-react";
-import { toast } from "sonner";
-import { api, API_BASE_URL } from "@/lib/api";
+import { api } from "@/lib/api";
+import { VaultCard, VaultButton, VaultHeader } from "@/components/shared/VaultPrimitives";
+import { File, Download, ShieldCheck, AlertCircle, Clock, Lock } from "lucide-react";
+import { formatBytes } from "@/lib/utils";
+import { motion } from "framer-motion";
 
-const formatBytes = (bytes?: number) => {
-  if (!bytes || bytes === 0) return "-";
-  const k = 1024;
-  const sizes = ["Bytes", "KB", "MB", "GB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
-};
-
-export default function PublicDocumentPage() {
-  const params = useParams();
-  const token = params.token as string;
-  const [loading, setLoading] = useState(false);
-  const [verifying, setVerifying] = useState(true);
-  const [metadata, setMetadata] = useState<{
-    name: string;
-    size_bytes: number;
-  } | null>(null);
+export default function PublicNodePage() {
+  const { token } = useParams();
+  const [node, setNode] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const verifyToken = async () => {
-      try {
-        const res = await api.get(`/public-api/documents/${token}/metadata`);
-        setMetadata(res.data);
-      } catch (err: any) {
-        if (err.response?.status === 403)
-          setError("SECURITY_RESTRICTION: Access denied.");
-        else if (err.response?.status === 404)
-          setError("SIGNAL_NOT_FOUND: Invalid or expired link.");
-        else setError("SYSTEM_ERROR: Verification failed.");
-      } finally {
-        setVerifying(false);
-      }
-    };
-    if (token) verifyToken();
+    api.get(`/public-api/nodes/${token}`)
+      .then(res => setNode(res.data))
+      .catch(err => setError(err.response?.data?.error || "Link expired or invalid"))
+      .finally(() => setLoading(false));
   }, [token]);
 
   const handleDownload = async () => {
-    setLoading(true);
     try {
-      // Use native fetch for blob handling to easily get headers,
-      // but still use absolute URL from API utility
-      const response = await fetch(
-        `${API_BASE_URL}/public-api/documents/${token}`,
-      );
-      if (!response.ok) throw new Error("Download failed");
-
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-
-      const disposition = response.headers.get("Content-Disposition");
-      let filename = metadata?.name || "download";
-      if (disposition && disposition.indexOf("attachment") !== -1) {
-        const filenameRegex = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/;
-        const matches = filenameRegex.exec(disposition);
-        if (matches != null && matches[1]) {
-          filename = matches[1].replace(/['"]/g, "");
-        }
-      }
-
-      link.setAttribute("download", filename);
-      document.body.appendChild(link);
-      link.click();
-      link.parentNode?.removeChild(link);
-      toast.success("Download started");
-    } catch (err: any) {
-      toast.error(err.message);
-    } finally {
-      setLoading(false);
+        const response = await api.get(`/public-api/nodes/${token}/download`, { responseType: 'blob' });
+        const url = window.URL.createObjectURL(new Blob([response.data]));
+        const link = document.createElement('a');
+        link.href = url;
+        link.setAttribute('download', node.name);
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+    } catch (e) {
+        setError("Download failed");
     }
   };
 
-  if (verifying) {
-    return (
-      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6">
-        <div className="bg-slate-900 text-white p-4 rounded-3xl border-4 border-slate-900 shadow-[8px_8px_0px_0px_rgba(59,130,246,1)] animate-bounce mb-8">
-          <ShieldCheck size={40} />
-        </div>
-        <p className="font-black text-[11px] text-slate-400 uppercase tracking-[0.5em] italic">
-          Establishing_Secure_Link...
-        </p>
-      </div>
-    );
-  }
+  if (loading) return <div className="min-h-screen flex items-center justify-center font-mono text-[10px] text-accent animate-pulse uppercase tracking-[0.5em]">Establishing_Secure_Link...</div>;
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 font-sans">
-      <div className="w-full max-w-md space-y-8">
-        <div className="flex flex-col items-center text-center space-y-4">
-          <div className="bg-blue-600 text-white p-5 rounded-[2rem] shadow-[8px_8px_0px_0px_rgba(15,23,42,1)] border-4 border-slate-900">
-            <File size={40} />
-          </div>
-          <VaultHeader
-            title="Public Signal"
-            subtitle="One-Way Cryptographic Access Node"
-          />
-        </div>
+    <div className="flex flex-col items-center justify-center min-h-screen px-6 py-12">
+        <motion.div
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="mb-12 flex flex-col items-center"
+        >
+            <div className="p-4 bg-accent/10 rounded-2xl border border-accent/20 mb-4 shadow-[0_0_40px_rgba(94,106,210,0.2)]">
+                <ShieldCheck className="text-accent" size={32} />
+            </div>
+            <h2 className="text-xs font-mono font-black tracking-[0.4em] uppercase text-white/40">
+                Verified_Public_Signal
+            </h2>
+        </motion.div>
 
-        <VaultCard variant="blue" className="p-8 border-4">
+        <VaultCard spotlight={true} className="w-full max-w-md p-0 border-white/[0.08] bg-white/[0.02] backdrop-blur-2xl overflow-hidden">
           {error ? (
-            <div className="bg-red-50 border-2 border-red-200 rounded-2xl p-6 text-red-600 flex flex-col items-center space-y-3">
-              <AlertCircle size={32} />
-              <p className="font-black uppercase text-[10px] text-center tracking-tight leading-relaxed">
-                {error}
-              </p>
-              <VaultButton
-                variant="outline"
-                className="w-full mt-4 text-[10px]"
-                onClick={() => window.location.reload()}
-              >
-                RETRY_PROTOCOL
-              </VaultButton>
+            <div className="p-10 text-center space-y-6">
+                <div className="mx-auto w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center border border-red-500/20">
+                    <AlertCircle size={32} className="text-red-500" />
+                </div>
+                <div className="space-y-2">
+                    <h3 className="text-lg font-semibold text-white uppercase tracking-tight">Signal_Lost</h3>
+                    <p className="text-sm text-foreground-muted leading-relaxed">{error}</p>
+                </div>
             </div>
           ) : (
-            <div className="space-y-8 text-center">
-              <div className="space-y-4">
-                <div className="p-5 bg-slate-50 border-2 border-slate-200 rounded-2xl text-left shadow-inner">
-                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-1">
-                    <ShieldCheck size={10} className="text-blue-600" />{" "}
-                    Resource_Identity
-                  </p>
-                  <p className="font-black text-slate-900 truncate text-lg tracking-tight">
-                    {metadata?.name}
-                  </p>
-                  <p className="text-[10px] font-mono text-slate-400 mt-1 uppercase">
-                    Size: {formatBytes(metadata?.size_bytes)}
-                  </p>
+            <div className="p-10 space-y-8">
+                <div className="flex items-center gap-5">
+                    <div className="p-4 bg-white/[0.03] rounded-2xl border border-white/10">
+                        <File size={32} className="text-foreground-muted" />
+                    </div>
+                    <div className="flex flex-col min-w-0">
+                        <span className="font-semibold text-white truncate text-lg tracking-tight">{node.name}</span>
+                        <span className="text-xs font-mono text-foreground-subtle uppercase tracking-widest mt-1">
+                            {formatBytes(node.size_bytes || 0)} • {node.mime_type?.split('/')[1]?.toUpperCase()}
+                        </span>
+                    </div>
                 </div>
-              </div>
 
-              <VaultButton
-                onClick={handleDownload}
-                disabled={loading}
-                className="w-full py-10 text-xs bg-slate-900 hover:bg-blue-600"
-              >
-                <DownloadCloud size={20} className="mr-3" />{" "}
-                {loading ? "SYNCHRONIZING..." : "EXECUTE_DOWNLOAD"}
-              </VaultButton>
+                <div className="space-y-4">
+                    <div className="flex items-center gap-3 p-3 bg-white/[0.02] border border-white/[0.06] rounded-xl text-[10px] text-foreground-muted uppercase tracking-widest">
+                        <Clock size={14} />
+                        Available until manually revoked
+                    </div>
+                    <VaultButton onClick={handleDownload} className="w-full h-14 text-base font-semibold group">
+                        DOWNLOAD_PAYLOAD <Download size={18} className="ml-2 group-hover:translate-y-0.5 transition-transform" />
+                    </VaultButton>
+                </div>
             </div>
           )}
         </VaultCard>
 
-        <footer className="text-center">
-          <p className="text-[10px] font-black uppercase tracking-[0.4em] text-slate-300">
-            Ory_Vault_Public_Service_v1.2 // Secure_Handshake
-          </p>
-        </footer>
-      </div>
+        <motion.div 
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.5 }}
+          className="mt-8 flex items-center justify-center gap-2 text-[10px] font-mono text-white/10 uppercase tracking-widest"
+        >
+          <Lock size={10} />
+          End_to_End_Encrypted_Link
+        </motion.div>
     </div>
   );
 }

@@ -6,23 +6,21 @@ import {
   DialogContent, 
   DialogHeader, 
   DialogTitle, 
-  DialogFooter,
-  DialogTrigger 
+  DialogFooter
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { VaultButton } from "@/components/shared/VaultPrimitives";
-import { UploadCloud, Plus } from "lucide-react";
+import { UploadCloud } from "lucide-react";
 import { api } from "@/lib/api";
 import { useVault } from "@/context/VaultContext";
 import { toast } from "sonner";
 
-export const UploadDialog = ({ nodeId }: { nodeId?: string | null }) => {
+export const UploadDialog = ({ open, onOpenChange, nodeId }: { open: boolean, onOpenChange: (o: boolean) => void, nodeId?: string | null }) => {
   const { currentFolder, mutateNodes, folderHistory } = useVault();
   const [file, setFile] = useState<File | null>(null);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [isUploading, setIsUploading] = useState(false);
-  const [open, setOpen] = useState(false);
 
   const handleUpload = async () => {
     if (!file) return;
@@ -40,7 +38,7 @@ export const UploadDialog = ({ nodeId }: { nodeId?: string | null }) => {
       });
       toast.success(nodeId ? "New version uploaded" : "File uploaded");
       setFile(null);
-      setOpen(false);
+      onOpenChange(false);
       mutateNodes();
     } catch (err: any) { 
       toast.error("Upload failed"); 
@@ -49,47 +47,36 @@ export const UploadDialog = ({ nodeId }: { nodeId?: string | null }) => {
     }
   };
 
-  const targetName = folderHistory[folderHistory.length - 1].name;
+  const targetName = folderHistory[folderHistory.length - 1]?.name || "Root";
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        {nodeId ? (
-             <VaultButton variant="outline" size="icon" className="h-8 w-8 text-blue-600 border-2" title="Upload New Version">
-                <UploadCloud size={14} />
-             </VaultButton>
-        ) : (
-            <VaultButton variant="default" size="sm" className="shadow-lg h-10 px-6">
-                <UploadCloud size={16} className="mr-2" /> UPLOAD
-            </VaultButton>
-        )}
-      </DialogTrigger>
-      <DialogContent className="border-4 border-slate-900 rounded-[2rem] bg-white">
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-[425px] bg-background-elevated border-white/[0.06] backdrop-blur-2xl">
         <DialogHeader>
-          <DialogTitle className="font-black uppercase italic tracking-tight">
+          <DialogTitle className="flex items-center gap-2">
+            <UploadCloud size={18} className="text-accent" />
             {nodeId ? "Upload New Version" : `Upload to ${targetName}`}
           </DialogTitle>
         </DialogHeader>
         <div className="space-y-6 py-6">
-          <div className="group relative">
-            <Input 
-                type="file" 
-                onChange={(e) => setFile(e.target.files?.[0] || null)} 
-                className="border-2 rounded-xl h-16 cursor-pointer file:font-black file:uppercase file:text-[10px] file:bg-slate-100 file:border-0 file:h-full file:mr-4" 
-            />
-          </div>
+          <Input 
+              type="file" 
+              onChange={(e) => setFile(e.target.files?.[0] || null)} 
+              className="bg-white/[0.03] border-white/[0.06] focus:border-accent h-12 file:bg-accent file:text-white file:border-0 file:rounded file:mr-4 file:px-3 file:py-1 file:text-xs" 
+          />
           {isUploading && (
             <div className="space-y-2">
-              <div className="flex justify-between text-[10px] font-black uppercase tracking-widest text-blue-600">
+              <div className="flex justify-between text-[10px] font-mono uppercase tracking-widest text-accent">
                 <span>Transmitting_Data...</span>
                 <span>{uploadProgress}%</span>
               </div>
-              <Progress value={uploadProgress} className="h-3 rounded-full border-2 border-slate-900 bg-slate-100" />
+              <Progress value={uploadProgress} className="h-1 bg-white/5" />
             </div>
           )}
         </div>
-        <DialogFooter>
-          <VaultButton onClick={handleUpload} disabled={!file || isUploading} className="w-full py-7 text-sm">
+        <DialogFooter className="gap-3">
+          <VaultButton variant="ghost" onClick={() => onOpenChange(false)}>Cancel</VaultButton>
+          <VaultButton onClick={handleUpload} disabled={!file || isUploading}>
             {isUploading ? "PROCESS_SYNC..." : "EXECUTE_UPLOAD"}
           </VaultButton>
         </DialogFooter>

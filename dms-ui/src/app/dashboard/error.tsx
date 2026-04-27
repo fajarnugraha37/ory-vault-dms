@@ -2,9 +2,10 @@
 
 import React, { useEffect } from "react";
 import { VaultCard, VaultButton, VaultHeader } from "@/components/shared/VaultPrimitives";
-import { AlertTriangle, RefreshCcw } from "lucide-react";
+import { AlertCircle, RotateCcw } from "lucide-react";
+import { motion } from "framer-motion";
 
-export default function DashboardError({
+export default function Error({
   error,
   reset,
 }: {
@@ -12,28 +13,37 @@ export default function DashboardError({
   reset: () => void;
 }) {
   useEffect(() => {
-    console.error("DASHBOARD_CRITICAL_FAILURE:", error);
+    console.error(error);
   }, [error]);
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 font-sans text-slate-900">
-      <div className="w-full max-w-md space-y-8">
-        <div className="flex flex-col items-center text-center space-y-4">
-            <div className="bg-red-500 text-white p-5 rounded-[2rem] border-4 border-slate-900 shadow-[8px_8px_0px_0px_rgba(15,23,42,1)]">
-                <AlertTriangle size={40} />
-            </div>
-            <VaultHeader title="Sync Failure" subtitle="A critical interruption occurred in the vault stream" />
-        </div>
+    <div className="flex flex-col items-center justify-center min-h-[80vh] px-6">
+        <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="mb-8 p-4 bg-red-500/10 rounded-2xl border border-red-500/20 shadow-[0_0_40px_rgba(239,68,68,0.1)]"
+        >
+            <AlertCircle className="text-red-500" size={32} />
+        </motion.div>
 
-        <VaultCard variant="destructive" className="p-8 border-4 text-center space-y-6">
-            <p className="text-[10px] font-black text-red-600 uppercase tracking-widest bg-red-50 p-4 rounded-xl border-2 border-red-100">
-                {error.message || "Unknown cryptographic error"}
+        <VaultHeader 
+            title="System_Fault" 
+            subtitle="An unexpected anomaly has been detected in the vault infrastructure."
+        />
+
+        <VaultCard className="w-full max-w-md p-8 text-center space-y-6 bg-red-500/[0.02] border-red-500/20">
+            <p className="text-xs font-mono text-red-400 uppercase tracking-widest bg-red-500/5 py-2 px-4 rounded-lg">
+                ERROR_DIGEST: {error.digest || "CRYPTO_FAILURE"}
             </p>
-            <VaultButton onClick={reset} className="w-full py-8 text-xs bg-slate-900">
-                <RefreshCcw size={16} className="mr-2" /> RE-ESTABLISH_CONNECTION
+            
+            <p className="text-sm text-foreground-muted leading-relaxed">
+                {error.message || "An infrastructure error occurred. Please try to re-initialize the session."}
+            </p>
+
+            <VaultButton variant="secondary" className="w-full" onClick={() => reset()}>
+                <RotateCcw size={16} className="mr-2" /> RE_INITIALIZE_NODE
             </VaultButton>
         </VaultCard>
-      </div>
     </div>
   );
 }

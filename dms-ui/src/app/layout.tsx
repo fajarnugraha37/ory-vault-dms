@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-import { Toaster } from "@/components/ui/sonner";
+import { SceneWrapper } from "@/components/layout/SceneWrapper";
+import { Toaster } from "sonner";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -14,8 +15,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "ORY Vault DMS",
-  description: "Secure Document Management System",
+  title: "ORY Vault | Secure DMS",
+  description: "Advanced Document Management System secured by Ory Stack",
 };
 
 export default function RootLayout({
@@ -24,13 +25,12 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html
-      lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
-    >
-      <body className="min-h-full flex flex-col">
-        {children}
-        <Toaster position="top-right" richColors />
+    <html lang="en" className="dark">
+      <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
+        <SceneWrapper>
+          {children}
+        </SceneWrapper>
+        <Toaster position="bottom-right" theme="dark" richColors />
       </body>
     </html>
   );

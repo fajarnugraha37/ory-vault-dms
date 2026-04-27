@@ -1,189 +1,142 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
-import { ory } from "@/lib/ory";
-import { Session } from "@ory/client";
-import { AxiosError } from "axios";
-import { Navbar } from "@/components/layout/Navbar";
-import { VaultHeader, VaultCard, VaultButton, VaultBadge } from "@/components/shared/VaultPrimitives";
-import { 
-  User, 
-  Files, 
-  Settings, 
-  Trash2, 
-  ShieldCheck, 
-  Database,
-  ArrowRight,
-  LogOut,
-  Zap
-} from "lucide-react";
+import React from "react";
 import Link from "next/link";
+import { motion } from "framer-motion";
+import { 
+  Shield, 
+  ArrowRight, 
+  Lock, 
+  Terminal, 
+  Layers, 
+  Zap,
+  CheckCircle2,
+  Server
+} from "lucide-react";
+import { VaultCard, VaultButton } from "@/components/shared/VaultPrimitives";
 
-export default function HomeHubPage() {
-  const [session, setSession] = useState<Session | null>(null);
-  const [loading, setLoading] = useState(true);
-  const router = useRouter();
-
-  useEffect(() => {
-    ory
-      .toSession()
-      .then(({ data }) => {
-        setSession(data);
-        setLoading(false);
-      })
-      .catch((err: AxiosError) => {
-        if (err.response?.status === 401 || !err.response) {
-          router.push("/auth/login");
-          return;
-        }
-        setLoading(false);
-      });
-  }, [router]);
-
-  const onLogout = () => {
-    ory.createBrowserLogoutFlow().then(({ data }) => {
-      window.location.href = data.logout_url;
-    });
-  };
-
-  if (loading) return (
-    <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6">
-        <div className="w-12 h-12 border-4 border-slate-200 border-t-blue-600 rounded-full animate-spin mb-4" />
-        <p className="font-black text-[10px] text-slate-400 uppercase tracking-widest italic">Syncing_Identity_Nodes...</p>
-    </div>
-  );
-
+export default function LandingPage() {
   return (
-    <div className="min-h-screen bg-slate-50 pb-20 font-sans text-slate-900">
-      <Navbar />
+    <div className="relative min-h-screen">
+      {/* Hero Section */}
+      <section className="max-w-7xl mx-auto px-6 pt-32 pb-24 text-center space-y-12">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.5 }}
+          className="inline-flex items-center gap-3 px-4 py-2 bg-white/[0.03] border border-white/[0.06] rounded-full text-xs font-mono text-accent-bright uppercase tracking-widest"
+        >
+          <Zap size={14} className="animate-pulse" />
+          System_Status: Operational
+        </motion.div>
 
-      <main className="p-8 max-w-6xl mx-auto mt-10 space-y-12">
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
-            <VaultHeader 
-                title="System Hub" 
-                subtitle={`Welcome back, ${session?.identity?.traits.first_name || 'Operator'}. Identity node verified.`} 
-            />
-            <div className="flex gap-4">
-                <VaultButton variant="outline" className="h-12 border-red-200 text-red-500 hover:bg-red-50" onClick={onLogout}>
-                    <LogOut size={16} className="mr-2" /> TERMINATE_SESSION
-                </VaultButton>
-            </div>
+        <div className="space-y-6 max-w-4xl mx-auto">
+          <motion.h1 
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="text-6xl md:text-8xl font-semibold tracking-tight text-gradient leading-[1.1]"
+          >
+            Secure_Digital <br /> Infrastructure
+          </motion.h1>
+          <motion.p 
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1 }}
+            className="text-lg md:text-xl text-foreground-muted max-w-2xl mx-auto leading-relaxed"
+          >
+            Decentralized document management with zero-trust protocols, 
+            cryptographic identity verification, and multi-tenant isolation.
+          </motion.p>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-10">
-            {/* Identity Profile */}
-            <div className="lg:col-span-4">
-                <VaultCard variant="blue" className="p-8 space-y-6 sticky top-28">
-                    <div className="w-20 h-20 bg-slate-900 text-white rounded-3xl flex items-center justify-center border-4 border-slate-900 shadow-[6px_6px_0px_0px_rgba(59,130,246,1)]">
-                        <User size={40} />
-                    </div>
-                    <div>
-                        <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Identity_Subject</p>
-                        <h3 className="font-black text-xl tracking-tight truncate">{session?.identity?.traits.email}</h3>
-                        <div className="flex gap-2 mt-3">
-                            <VaultBadge className="bg-blue-50 border-blue-200 text-blue-600">Active</VaultBadge>
-                            <VaultBadge className="bg-slate-900 text-white border-slate-900">v1.2</VaultBadge>
-                        </div>
-                    </div>
-                    <div className="space-y-4 pt-6 border-t-2 border-slate-100">
-                        <div className="flex justify-between items-center">
-                            <span className="text-[10px] font-black text-slate-400 uppercase">System_Access</span>
-                            <span className="text-[10px] font-bold text-slate-900 uppercase tracking-tighter">GRANTED_FULL</span>
-                        </div>
-                        <div className="flex justify-between items-center">
-                            <span className="text-[10px] font-black text-slate-400 uppercase">Division</span>
-                            <span className="text-[10px] font-bold text-slate-900 uppercase tracking-tighter">{session?.identity?.traits.division || "EXTERNAL"}</span>
-                        </div>
-                    </div>
-                    <VaultButton variant="outline" className="w-full h-12" asChild>
-                        <Link href="/auth/settings">MANAGE_IDENTITY</Link>
-                    </VaultButton>
-                </VaultCard>
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2 }}
+          className="flex flex-col sm:flex-row items-center justify-center gap-4"
+        >
+          <Link href="/auth/login">
+            <VaultButton className="h-14 px-10 text-lg rounded-xl">
+              Initialize_Access <ArrowRight size={20} className="ml-2" />
+            </VaultButton>
+          </Link>
+          <Link href="/auth/registration">
+            <VaultButton variant="secondary" className="h-14 px-10 text-lg rounded-xl">
+              Register_Node
+            </VaultButton>
+          </Link>
+        </motion.div>
+      </section>
+
+      {/* Feature Grid (Bento Style) */}
+      <section className="max-w-7xl mx-auto px-6 py-24">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <VaultCard className="md:col-span-2 p-10 space-y-4 h-[400px] flex flex-col justify-end">
+            <div className="p-3 bg-accent/10 rounded-xl border border-accent/20 w-fit mb-4">
+              <Shield className="text-accent" size={24} />
             </div>
+            <h3 className="text-3xl font-semibold text-white">Identity_Assurance</h3>
+            <p className="text-foreground-muted max-w-md">
+              Powered by Ory Kratos. Full life-cycle management including MFA, 
+              account recovery, and session auditing across all subdomains.
+            </p>
+          </VaultCard>
 
-            {/* Quick Actions Grid */}
-            <div className="lg:col-span-8 grid grid-cols-1 md:grid-cols-2 gap-6">
-                <Link href="/dashboard/documents" className="group">
-                    <VaultCard className="p-8 h-full hover:shadow-[16px_16px_0px_0px_rgba(59,130,246,1)] group-hover:-translate-y-2 transition-all">
-                        <div className="bg-blue-100 text-blue-600 p-3 rounded-2xl w-fit mb-6 border-2 border-blue-200">
-                            <Files size={28} />
-                        </div>
-                        <h4 className="font-black text-2xl tracking-tighter italic uppercase mb-2">Vault_Explorer</h4>
-                        <p className="text-sm font-bold text-slate-400 uppercase tracking-tight leading-relaxed mb-8">
-                            Access encrypted storage, manage folders, and generate cryptographic signals for document sharing.
-                        </p>
-                        <div className="flex items-center text-blue-600 font-black text-xs uppercase tracking-widest gap-2">
-                            Enter_Vault <ArrowRight size={16} />
-                        </div>
-                    </VaultCard>
-                </Link>
-
-                <Link href="/dashboard/apps" className="group">
-                    <VaultCard variant="indigo" className="p-8 h-full hover:shadow-[16px_16px_0px_0px_rgba(79,70,229,1)] group-hover:-translate-y-2 transition-all">
-                        <div className="bg-indigo-100 text-indigo-600 p-3 rounded-2xl w-fit mb-6 border-2 border-indigo-200">
-                            <Zap size={28} />
-                        </div>
-                        <h4 className="font-black text-2xl tracking-tighter italic uppercase mb-2">App_Forge</h4>
-                        <p className="text-sm font-bold text-slate-400 uppercase tracking-tight leading-relaxed mb-8">
-                            Register third-party applications and manage OAuth2 delegation keys for machine-to-machine access.
-                        </p>
-                        <div className="flex items-center text-indigo-600 font-black text-xs uppercase tracking-widest gap-2">
-                            Manage_Integrations <ArrowRight size={16} />
-                        </div>
-                    </VaultCard>
-                </Link>
-
-                <Link href="/dashboard/trash" className="group">
-                    <VaultCard variant="destructive" className="p-8 h-full hover:shadow-[16px_16px_0px_0px_rgba(239,68,68,1)] group-hover:-translate-y-2 transition-all">
-                        <div className="bg-red-100 text-red-600 p-3 rounded-2xl w-fit mb-6 border-2 border-red-200">
-                            <Trash2 size={28} />
-                        </div>
-                        <h4 className="font-black text-2xl tracking-tighter italic uppercase mb-2">Recycle_Bin</h4>
-                        <p className="text-sm font-bold text-slate-400 uppercase tracking-tight leading-relaxed mb-8">
-                            Review recently deleted items and restore them back to the vault before permanent synchronization.
-                        </p>
-                        <div className="flex items-center text-red-600 font-black text-xs uppercase tracking-widest gap-2">
-                            Recovery_Node <ArrowRight size={16} />
-                        </div>
-                    </VaultCard>
-                </Link>
-
-                <div className="p-8 bg-slate-900 rounded-[2.5rem] text-white space-y-6 shadow-xl border-4 border-slate-900">
-                    <div className="flex items-center gap-3">
-                        <ShieldCheck size={24} className="text-blue-400" />
-                        <span className="font-black uppercase italic tracking-widest">Security_Audit</span>
-                    </div>
-                    <div className="space-y-4">
-                        <div className="flex justify-between items-center bg-slate-800 p-3 rounded-xl border border-slate-700">
-                            <span className="text-[9px] font-black uppercase text-slate-400">Core_Engine</span>
-                            <span className="text-[9px] font-bold text-blue-400">ORY_STACK_1.2</span>
-                        </div>
-                        <div className="flex justify-between items-center bg-slate-800 p-3 rounded-xl border border-slate-700">
-                            <span className="text-[9px] font-black uppercase text-slate-400">Node_Status</span>
-                            <span className="text-[9px] font-bold text-green-400">ENCRYPTED_UP</span>
-                        </div>
-                    </div>
-                    <VaultButton className="w-full bg-blue-600 hover:bg-blue-500 border-0 h-12 text-[10px]">
-                        DOWNLOAD_SECURITY_REPORT
-                    </VaultButton>
-                </div>
+          <VaultCard className="p-10 space-y-4 h-[400px] flex flex-col justify-end bg-gradient-to-tr from-accent/5 to-transparent">
+            <div className="p-3 bg-indigo-500/10 rounded-xl border border-indigo-500/20 w-fit mb-4">
+              <Lock className="text-indigo-400" size={24} />
             </div>
+            <h3 className="text-3xl font-semibold text-white">Zero_Trust</h3>
+            <p className="text-foreground-muted">
+              Every request is verified via Oathkeeper at the edge.
+            </p>
+          </VaultCard>
+
+          <VaultCard className="p-10 space-y-4 h-[400px] flex flex-col justify-end">
+            <div className="p-3 bg-blue-500/10 rounded-xl border border-blue-500/20 w-fit mb-4">
+              <Layers size={24} className="text-blue-400" />
+            </div>
+            <h3 className="text-3xl font-semibold text-white">Zanzibar_AuthZ</h3>
+            <p className="text-foreground-muted">
+              Granular permissions powered by Google's Zanzibar model via Ory Keto.
+            </p>
+          </VaultCard>
+
+          <VaultCard className="md:col-span-2 p-10 space-y-4 h-[400px] flex flex-col justify-end">
+             <div className="flex items-center gap-6 mb-4 opacity-50 grayscale hover:opacity-100 transition-all">
+                <Server size={32} />
+                <Terminal size={32} />
+                <Layers size={32} />
+             </div>
+            <h3 className="text-3xl font-semibold text-white">Enterprise_API</h3>
+            <p className="text-foreground-muted max-w-lg">
+              Automate your workflows with our robust OAuth2/OIDC compliant API gateway. 
+              Register machine-to-machine clients in seconds.
+            </p>
+          </VaultCard>
         </div>
-      </main>
+      </section>
 
-      <footer className="mt-20 border-t-4 border-slate-900 p-10 text-center bg-white">
-          <div className="max-w-4xl mx-auto flex flex-col md:flex-row justify-between items-center gap-6">
-              <div className="text-left">
-                  <p className="text-lg font-black italic tracking-tighter uppercase leading-none">OryVault_Production</p>
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mt-1">Zero_Trust_Protocol_Standard</p>
-              </div>
-              <div className="flex gap-8 text-[10px] font-black text-slate-300 uppercase tracking-widest">
-                  <span className="hover:text-slate-900 cursor-pointer">Security</span>
-                  <span className="hover:text-slate-900 cursor-pointer">Protocol</span>
-                  <span className="hover:text-slate-900 cursor-pointer">Manual</span>
-              </div>
+      {/* Technical Footer */}
+      <footer className="border-t border-white/[0.06] py-20 bg-background-deep/50 backdrop-blur-md">
+        <div className="max-w-7xl mx-auto px-6 flex flex-col md:flex-row justify-between items-center gap-10">
+          <div className="flex items-center gap-3">
+             <div className="p-2 bg-white/[0.05] rounded-lg">
+                <Shield size={16} className="text-foreground-muted" />
+             </div>
+             <span className="font-mono text-[10px] uppercase tracking-[0.3em] text-foreground-subtle">
+                Vault_System_v0.2.0-Alpha
+             </span>
           </div>
+          
+          <div className="flex gap-10">
+             {['Documentation', 'Security', 'GitHub', 'API_Reference'].map(item => (
+                <span key={item} className="text-[10px] font-mono uppercase tracking-widest text-foreground-muted hover:text-accent transition-colors cursor-pointer">
+                    {item}
+                </span>
+             ))}
+          </div>
+        </div>
       </footer>
     </div>
   );

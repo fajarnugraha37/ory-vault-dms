@@ -7,77 +7,112 @@ import {
   DialogHeader, 
   DialogTitle, 
   DialogDescription,
-  DialogFooter,
-  DialogTrigger,
-  DialogClose
+  DialogFooter
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { VaultButton } from "@/components/shared/VaultPrimitives";
-import { MoveRight, Database } from "lucide-react";
+import { MoveRight, Database, ChevronRight } from "lucide-react";
 import { api } from "@/lib/api";
 import { useVault } from "@/context/VaultContext";
+import { toast } from "sonner";
 
-export const MoveDialog = ({ item }: { item: any }) => {
-  const { handleAction } = useVault();
+export const MoveDialog = ({ open, onOpenChange, node }: { open: boolean, onOpenChange: (o: boolean) => void, node: any }) => {
+  const { mutateNodes } = useVault();
   const [targetParentId, setTargetParentId] = useState("");
+  const [loading, setLoading] = useState(false);
 
   const onExecuteMove = async () => {
-    await handleAction('Move', () => api.put(`/api/nodes/${item.id}/move`, { 
-        parent_id: targetParentId.trim() === "" ? null : targetParentId 
-    }));
-    setTargetParentId("");
+    if (!node) return;
+    setLoading(true);
+    try {
+        await api.put(`/api/nodes/${node.id}/move`, { 
+            parent_id: targetParentId.trim() === "" ? null : targetParentId 
+        });
+        toast.success("Identity relocation successful");
+        mutateNodes();
+        setTargetParentId("");
+        onOpenChange(false);
+    } catch (e: any) {
+        toast.error(e.response?.data?.error || "Relocation failed");
+    } finally {
+        setLoading(false);
+    }
   };
 
   return (
-    <Dialog>
-      <DialogTrigger asChild>
-        <VaultButton variant="outline" size="icon" className="h-8 w-8 text-emerald-600 border-2" title="Move">
-            <MoveRight size={14} />
-        </VaultButton>
-      </DialogTrigger>
-      <DialogContent className="border-4 border-slate-900 rounded-[2rem] bg-white">
-        <DialogHeader>
-          <DialogTitle className="font-black uppercase italic tracking-tight text-xl">Move_{item.type}</DialogTitle>
-          <DialogDescription className="font-bold text-[10px] text-slate-400 uppercase tracking-widest mt-2">
-            Enter Target Folder UUID or set to Root level.
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-[425px] bg-background-elevated border-white/[0.08] p-0 overflow-hidden backdrop-blur-3xl shadow-2xl">
+        <DialogHeader className="p-8 pb-4 border-b border-white/[0.06] bg-accent/5">
+          <DialogTitle className="flex items-center gap-3">
+            <div className="p-2 bg-accent/10 rounded-lg border border-accent/20">
+                <MoveRight size={18} className="text-accent" />
+            </div>
+            <div className="flex flex-col">
+                <span className="text-white text-lg tracking-tight">Identity_Relocation</span>
+                <span className="text-[10px] font-mono text-foreground-muted uppercase tracking-[0.2em]">{node?.name}</span>
+            </div>
+          </DialogTitle>
+          <DialogDescription className="px-1 text-[10px] text-foreground-muted uppercase tracking-widest mt-2">
+            Target a new parent directory or restore to system root.
           </DialogDescription>
         </DialogHeader>
-        <div className="space-y-6 py-6">
-          <div className="flex gap-3">
-            <Input 
-                value={targetParentId} 
-                onChange={e => setTargetParentId(e.target.value)} 
-                placeholder="Folder UUID" 
-                className="flex-1 rounded-xl border-2 font-mono h-14 text-xs bg-slate-50 focus:bg-white transition-colors" 
-            />
-            <VaultButton 
-                variant="outline" 
-                className="font-black text-[10px] rounded-xl border-2 px-6 h-14 hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-200" 
-                onClick={() => setTargetParentId("")}
-            >
-                ROOT
-            </VaultButton>
+        
+        <div className="p-8 space-y-6">
+          <div className="space-y-4">
+              <div className="flex gap-2">
+                <div className="flex-1">
+                    <Label className="text-[9px] uppercase font-mono text-foreground-subtle ml-1">Parent_UUID</Label>
+                    <Input 
+                        value={targetParentId} 
+                        onChange={e => setTargetParentId(e.target.value)} 
+                        placeholder="0000-0000-..." 
+                        className="bg-white/[0.02] border-white/[0.06] font-mono h-12 text-xs" 
+                    />
+                </div>
+                <div className="flex items-end">
+                    <VaultButton 
+                        variant="secondary" 
+                        className="h-12 px-4 text-[10px] border-white/10" 
+                        onClick={() => setTargetParentId("")}
+                    >
+                        ROOT
+                    </VaultButton>
+                </div>
+              </div>
+
+              <div className={cn(
+                  "p-4 rounded-xl border transition-all flex items-center gap-3",
+                  targetParentId === "" ? "bg-accent/5 border-accent/20" : "bg-white/[0.02] border-white/[0.06]"
+              )}>
+                <Database size={18} className={targetParentId === "" ? "text-accent" : "text-foreground-muted"} />
+                <div>
+                    <p className="text-[10px] font-bold text-white uppercase tracking-widest">
+                        {targetParentId === "" ? "Target:_System_Root" : "Target:_Custom_Node"}
+                    </p>
+                    <p className="text-[9px] text-foreground-muted uppercase mt-0.5">
+                        {targetParentId === "" ? "Restoring node to top-level hierarchy" : "Relocating to specified identifier"}
+                    </p>
+                </div>
+              </div>
           </div>
-          {targetParentId === "" && (
-            <div className="bg-emerald-50 border-2 border-emerald-100 p-4 rounded-2xl flex items-center gap-3 animate-in zoom-in-95 duration-200">
-              <div className="bg-white p-2 rounded-lg border-2 border-emerald-200">
-                 <Database size={18} className="text-emerald-600" />
-              </div>
-              <div>
-                <p className="text-[10px] font-black text-emerald-700 uppercase tracking-widest leading-none">Target:_Home_Vault</p>
-                <p className="text-[9px] font-bold text-emerald-500 uppercase mt-1">Item will be moved to root directory</p>
-              </div>
-            </div>
-          )}
+
+          <VaultButton 
+              onClick={onExecuteMove} 
+              className="w-full h-14"
+              isLoading={loading}
+          >
+              EXECUTE_RELOCATION <ChevronRight size={16} className="ml-1" />
+          </VaultButton>
         </div>
-        <DialogFooter>
-          <DialogClose asChild>
-            <VaultButton onClick={onExecuteMove} className="w-full py-7 text-xs bg-emerald-600 hover:bg-emerald-700">
-                EXECUTE_RELOCATION
-            </VaultButton>
-          </DialogClose>
-        </DialogFooter>
       </DialogContent>
     </Dialog>
   );
 };
+
+function cn(...inputs: any[]) {
+  return inputs.filter(Boolean).join(" ");
+}
+
+function Label({ children, className }: { children: React.ReactNode, className?: string }) {
+    return <label className={cn("text-xs font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70", className)}>{children}</label>
+}

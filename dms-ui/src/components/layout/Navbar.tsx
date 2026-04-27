@@ -1,154 +1,109 @@
 "use client";
 
 import React from "react";
-import {
-  FileText,
-  Settings,
-  ArrowLeft,
-  Trash2,
-  Shield,
-  LogOut,
-  LayoutGrid,
-} from "lucide-react";
-import { VaultButton } from "@/components/shared/VaultPrimitives";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { ory } from "@/lib/ory";
+import { usePathname, useRouter } from "next/navigation";
+import { 
+  Shield, 
+  Folder, 
+  Settings, 
+  LogOut, 
+  User, 
+  LayoutDashboard, 
+  Lock,
+  Layers,
+  Terminal
+} from "lucide-react";
 import useSWR from "swr";
-import { fetcher } from "@/lib/api";
+import { fetcher, api } from "@/lib/api";
+import { cn } from "@/lib/utils";
+import { motion } from "framer-motion";
 
-interface NavbarProps {
-  actions?: React.ReactNode;
-}
-
-export const Navbar = ({ actions }: NavbarProps) => {
+export function Navbar() {
   const pathname = usePathname();
+  const router = useRouter();
   const { data: me } = useSWR("/api/me", fetcher);
 
-  const getModuleInfo = () => {
-    if (pathname.includes("/dashboard/apps"))
-      return {
-        title: "App_Forge",
-        color: "text-indigo-600",
-        icon: <Settings size={20} />,
-      };
-    if (pathname.includes("/dashboard/admin"))
-      return {
-        title: "Admin_Control",
-        color: "text-slate-600",
-        icon: <Shield size={20} />,
-      };
-    if (pathname.includes("/dashboard/trash"))
-      return {
-        title: "Recycle_Bin",
-        color: "text-red-600",
-        icon: <Trash2 size={20} />,
-      };
-    if (pathname === "/")
-      return {
-        title: "System_Hub",
-        color: "text-blue-600",
-        icon: <LayoutGrid size={20} />,
-      };
-    return {
-      title: "Vault_Ops",
-      color: "text-blue-600",
-      icon: <FileText size={20} />,
-    };
-  };
+  const navItems = [
+    { label: "Vault", href: "/dashboard/documents", icon: Folder },
+    { label: "Apps", href: "/dashboard/apps", icon: Layers },
+    { label: "Trash", href: "/dashboard/trash", icon: Terminal },
+  ];
 
-  const onLogout = async () => {
+  if (me?.roles?.includes("admin")) {
+    navItems.push({ label: "Identity", href: "/dashboard/admin/users", icon: Shield });
+  }
+
+  const handleLogout = async () => {
     try {
-      const { data } = await ory.createBrowserLogoutFlow();
+      const { data } = await api.get("/auth/logout/browser");
       window.location.href = data.logout_url;
     } catch (e) {
-      // Fallback if session already gone
       window.location.href = "/auth/login";
     }
   };
 
-  const module = getModuleInfo();
-  const isAdmin = me?.roles?.includes("admin");
-
   return (
-    <nav className="bg-white border-b-4 border-slate-900 px-8 py-4 flex justify-between items-center sticky top-0 z-50 shadow-md">
-      <Link href="/" className="flex items-center gap-3 group">
-        <div className="bg-slate-900 text-white p-2 rounded-lg group-hover:scale-110 transition-transform">
-          {module.icon}
+    <nav className="sticky top-0 z-50 w-full border-b border-white/[0.06] bg-background-base/80 backdrop-blur-xl">
+      <div className="mx-auto max-w-7xl px-6 h-16 flex items-center justify-between">
+        <div className="flex items-center gap-8">
+          <Link href="/" className="flex items-center gap-2 group">
+            <div className="p-2 bg-accent/10 rounded-xl border border-accent/20 group-hover:border-accent/40 transition-colors">
+              <Shield className="text-accent" size={20} />
+            </div>
+            <span className="font-semibold tracking-tight text-white/90 group-hover:text-white transition-colors">
+              ORY_VAULT
+            </span>
+          </Link>
+
+          <div className="hidden md:flex items-center gap-1">
+            {navItems.map((item) => {
+              const isActive = pathname === item.href;
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={cn(
+                    "relative px-4 py-2 text-sm font-medium transition-colors rounded-lg",
+                    isActive 
+                      ? "text-white bg-white/[0.05]" 
+                      : "text-foreground-muted hover:text-foreground hover:bg-white/[0.03]"
+                  )}
+                >
+                  <div className="flex items-center gap-2">
+                    <item.icon size={16} className={cn(isActive ? "text-accent" : "text-foreground-muted")} />
+                    {item.label}
+                  </div>
+                  {isActive && (
+                    <motion.div
+                      layoutId="nav-active"
+                      className="absolute inset-0 bg-white/[0.05] rounded-lg -z-10"
+                      transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
+                    />
+                  )}
+                </Link>
+              );
+            })}
+          </div>
         </div>
-        <span className="font-black text-2xl tracking-tighter uppercase italic">
-          {module.title} <span className="text-slate-300">DMS</span>
-        </span>
-      </Link>
 
-      <div className="flex gap-4 items-center">
-        {actions}
-
-        {/* Home Link */}
-        {pathname !== "/" && (
-          <VaultButton
-            variant="outline"
-            size="sm"
-            asChild
-            className="text-[10px]"
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3 px-3 py-1.5 bg-white/[0.03] border border-white/[0.06] rounded-full">
+            <div className="w-5 h-5 bg-gradient-to-tr from-accent to-indigo-400 rounded-full" />
+            <span className="text-xs font-medium text-foreground-muted">
+              {me?.email?.split('@')[0] || "SUBJECT_00"}
+            </span>
+          </div>
+          
+          <button
+            onClick={handleLogout}
+            className="p-2 text-foreground-muted hover:text-red-400 transition-colors rounded-lg hover:bg-red-500/10"
+            title="Terminate Session"
           >
-            <Link href="/">
-              <LayoutGrid size={14} className="mr-2" /> HUB
-            </Link>
-          </VaultButton>
-        )}
-
-        {/* Admin Link - Conditional */}
-        {isAdmin && !pathname.includes("/dashboard/admin") && (
-          <VaultButton
-            variant="outline"
-            size="sm"
-            asChild
-            className="text-[10px] border-red-200 text-red-600 hover:bg-red-50"
-          >
-            <Link href="/dashboard/admin/users">
-              <Shield size={14} className="mr-2" /> ADMIN
-            </Link>
-          </VaultButton>
-        )}
-
-        {/* Apps Link */}
-        {!pathname.includes("/dashboard/apps") && (
-          <VaultButton
-            variant="outline"
-            size="sm"
-            asChild
-            className="text-[10px]"
-          >
-            <Link href="/dashboard/apps">
-              <Settings size={14} className="mr-2" /> APPS
-            </Link>
-          </VaultButton>
-        )}
-
-        {/* Back to Vault shortcut */}
-        {pathname !== "/dashboard/documents" && pathname !== "/" && (
-          <VaultButton
-            variant="outline"
-            size="sm"
-            asChild
-            className="text-[10px]"
-          >
-            <Link href="/dashboard/documents">
-              <ArrowLeft size={14} className="mr-2" /> VAULT
-            </Link>
-          </VaultButton>
-        )}
-
-        <VaultButton
-          variant="ghost"
-          size="icon"
-          className="rounded-full hover:bg-red-50 hover:text-red-600"
-          onClick={onLogout}
-        >
-          <LogOut size={18} />
-        </VaultButton>
+            <LogOut size={18} />
+          </button>
+        </div>
       </div>
     </nav>
   );
-};
+}
