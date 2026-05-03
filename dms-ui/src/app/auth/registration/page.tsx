@@ -2,6 +2,8 @@
 
 import { useEffect, useState, Suspense } from "react";
 import { useRouter } from "next/navigation";
+import useSWR from "swr";
+import { fetcher } from "@/lib/api";
 import { ory } from "@/lib/ory";
 import { RegistrationFlow, UpdateRegistrationFlowBody } from "@ory/client";
 import { AxiosError } from "axios";
@@ -16,6 +18,13 @@ function RegistrationContent() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const router = useRouter();
+  const { data: me } = useSWR('/api/me', fetcher);
+
+  useEffect(() => {
+    if (me) {
+      router.push('/dashboard/documents');
+    }
+  }, [me, router]);
 
   useEffect(() => {
     ory

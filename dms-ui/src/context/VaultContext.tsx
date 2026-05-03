@@ -1,9 +1,10 @@
 "use client";
 
-import React, { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import React, { createContext, useContext, useState, useEffect, ReactNode, useRef } from "react";
 import useSWR, { KeyedMutator } from "swr";
 import { fetcher, api } from "@/lib/api";
 import { toast } from "sonner";
+import { usePathname } from "next/navigation";
 
 interface Node {
   id: string;
@@ -35,6 +36,7 @@ interface VaultContextType {
   sortOrder: 'asc' | 'desc';
   pageSize: number;
   offset: number;
+  searchQuery: string;
   me: any;
 
   // Setters
@@ -42,6 +44,7 @@ interface VaultContextType {
   setSortOrder: (order: 'asc' | 'desc') => void;
   setPageSize: (size: number) => void;
   setOffset: (offset: number) => void;
+  setSearchQuery: (query: string) => void;
   
   // Actions
   navigateTo: (id: string | null, name: string, isBack?: boolean) => void;
@@ -60,21 +63,28 @@ export const VaultProvider = ({ children }: { children: ReactNode }) => {
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
   const [pageSize, setPageSize] = useState(20);
   const [offset, setOffset] = useState(0);
+  const [searchQuery, setSearchQuery] = useState("");
 
   const { data: me } = useSWR('/api/me', fetcher);
   
   // Detect if we are in Trash page
-  const pathname = typeof window !== 'undefined' ? window.location.pathname : '';
+  const pathname = usePathname() || '';
   const isTrashPage = pathname.includes('/dashboard/trash');
 
   // Dynamic URL construction
-  const nodesUrl = `/api/nodes?limit=${pageSize}&offset=${offset}&sort_by=${sortBy}&sort_order=${sortOrder}${currentFolder ? `&parent_id=${currentFolder}` : ''}${isTrashPage ? '&show_deleted=true' : ''}`;
+  const nodesUrl = `/api/nodes?limit=${pageSize}&offset=${offset}&sort_by=${sortBy}&sort_order=${sortOrder}${currentFolder ? `&parent_id=${currentFolder}` : ''}${isTrashPage ? '&show_deleted=true' : ''}${searchQuery ? `&search=${encodeURIComponent(searchQuery)}` : ''}`;
   const { data: nodes, mutate: mutateNodes, isLoading } = useSWR<Node[]>(nodesUrl, fetcher);
 
+  const isMounted = useRef(false);
+
   useEffect(() => {
+    if (!isMounted.current) {
+      isMounted.current = true;
+      return;
+    }
     setOffset(0);
     mutateNodes();
-  }, [currentFolder, activeTab, sortBy, sortOrder, pageSize]);
+  }, [currentFolder, activeTab, sortBy, sortOrder, pageSize, searchQuery, mutateNodes]);
 
   const navigateTo = (id: string | null, name: string, isBack = false) => {
     setCurrentFolder(id);
@@ -108,8 +118,8 @@ export const VaultProvider = ({ children }: { children: ReactNode }) => {
   return (
     <VaultContext.Provider value={{
       nodes, isLoading, activeTab, setActiveTab, currentFolder, folderHistory,
-      sortBy, sortOrder, pageSize, offset, me,
-      setSortBy, setSortOrder, setPageSize, setOffset,
+      sortBy, sortOrder, pageSize, offset, searchQuery, me,
+      setSortBy, setSortOrder, setPageSize, setOffset, setSearchQuery,
       navigateTo, mutateNodes, handleAction, toggleSort
     }}>
       {children}

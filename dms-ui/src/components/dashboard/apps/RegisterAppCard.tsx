@@ -21,6 +21,7 @@ import { toast } from "sonner";
 
 export function RegisterAppCard({ onCreated }: { onCreated: () => void }) {
   const [name, setName] = useState("");
+  const [redirectUri, setRedirectUri] = useState("");
   const [loading, setLoading] = useState(false);
   const [createdClient, setCreatedClient] = useState<any>(null);
 
@@ -28,7 +29,10 @@ export function RegisterAppCard({ onCreated }: { onCreated: () => void }) {
     if (!name) return;
     setLoading(true);
     try {
-      const { data } = await api.post("/api/oauth2/clients", { client_name: name });
+      const { data } = await api.post("/api/oauth2/clients", { 
+        client_name: name,
+        redirect_uris: redirectUri ? [redirectUri] : []
+      });
       setCreatedClient(data);
       toast.success("Identity Module Registered");
       onCreated();
@@ -89,11 +93,22 @@ export function RegisterAppCard({ onCreated }: { onCreated: () => void }) {
           />
         </div>
 
+        <div className="space-y-2">
+          <Label htmlFor="redirect-uri" className="text-[10px] uppercase font-mono text-foreground-subtle ml-1">Redirect_URI</Label>
+          <Input
+            id="redirect-uri"
+            value={redirectUri}
+            onChange={(e) => setRedirectUri(e.target.value)}
+            placeholder="http://localhost:4000/callback"
+            className="bg-white/[0.03] border-white/[0.06] focus:border-accent h-12"
+          />
+        </div>
+
         <VaultButton 
             className="w-full h-12 group"
             onClick={handleRegister} 
             isLoading={loading}
-            disabled={!name}
+            disabled={!name || !redirectUri}
         >
             INITIALIZE_PROVISIONING <ChevronRight size={16} className="ml-2 group-hover:translate-x-0.5 transition-transform" />
         </VaultButton>

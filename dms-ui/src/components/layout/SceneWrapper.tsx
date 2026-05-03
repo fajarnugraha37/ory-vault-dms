@@ -28,7 +28,7 @@ export function SceneWrapper({ children, variant = "default" }: SceneWrapperProp
             repeat: Infinity,
             ease: "easeInOut",
           }}
-          className="absolute -top-[20%] left-1/2 -translate-x-1/2 w-[800px] h-[800px] bg-accent/20 blur-[120px] rounded-full"
+          className="absolute -top-[20%] left-1/2 -translate-x-1/2 w-[150vw] md:w-[900px] h-[150vh] md:h-[1400px] bg-accent/20 blur-[120px] rounded-full"
         />
 
         {/* Secondary Blob (Purple) */}
@@ -43,7 +43,7 @@ export function SceneWrapper({ children, variant = "default" }: SceneWrapperProp
             ease: "easeInOut",
             delay: 1,
           }}
-          className="absolute top-[20%] -left-[10%] w-[600px] h-[600px] bg-indigo-500/10 blur-[100px] rounded-full"
+          className="absolute top-[20%] -left-[10%] w-[120vw] md:w-[600px] h-[120vh] md:h-[800px] bg-indigo-500/10 blur-[100px] rounded-full"
         />
 
         {/* Tertiary Blob (Blue) */}
@@ -58,7 +58,7 @@ export function SceneWrapper({ children, variant = "default" }: SceneWrapperProp
             ease: "easeInOut",
             delay: 2,
           }}
-          className="absolute bottom-0 -right-[5%] w-[500px] h-[500px] bg-blue-500/10 blur-[100px] rounded-full"
+          className="absolute bottom-0 -right-[5%] w-[100vw] md:w-[500px] h-[100vh] md:h-[700px] bg-blue-500/10 blur-[100px] rounded-full"
         />
       </div>
 

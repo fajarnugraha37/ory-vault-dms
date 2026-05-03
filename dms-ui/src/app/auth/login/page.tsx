@@ -2,6 +2,8 @@
 
 import { useEffect, useState, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
+import useSWR from "swr";
+import { fetcher } from "@/lib/api";
 import { ory } from "@/lib/ory";
 import { api } from "@/lib/api";
 import { LoginFlow, UpdateLoginFlowBody } from "@ory/client";
@@ -18,6 +20,13 @@ function LoginContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const flowId = searchParams.get("flow");
+  const { data: me } = useSWR('/api/me', fetcher);
+
+  useEffect(() => {
+    if (me) {
+      router.push('/dashboard/documents');
+    }
+  }, [me, router]);
 
   useEffect(() => {
     if (flowId) {

@@ -62,6 +62,8 @@ export const ShareDialog = ({ open, onOpenChange, node }: { open: boolean, onOpe
     }));
   };
 
+  const origin = typeof window !== 'undefined' ? window.location.origin : '';
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[480px] bg-background-elevated border-white/[0.08] p-0 overflow-hidden backdrop-blur-3xl shadow-2xl">
@@ -158,10 +160,10 @@ export const ShareDialog = ({ open, onOpenChange, node }: { open: boolean, onOpe
                      <span className="text-[11px] font-mono text-accent-bright font-bold uppercase tracking-widest">Public_Signal_Broadcast_Active</span>
                   </div>
                   <div className="bg-black/60 border border-white/[0.06] p-4 rounded-xl font-mono text-[10px] break-all text-foreground-muted leading-relaxed shadow-inner">
-                    {`${window.location.origin}/public/${node.public_link_token}`}
+                    {`${origin}/public/${node.public_link_token}`}
                   </div>
                   <div className="flex gap-4">
-                    <VaultButton size="sm" variant="secondary" className="flex-1 h-12 text-[10px]" onClick={() => {navigator.clipboard.writeText(`${window.location.origin}/public/${node.public_link_token}`); toast.success("Signal link copied");}}>
+                    <VaultButton size="sm" variant="secondary" className="flex-1 h-12 text-[10px]" onClick={() => {navigator.clipboard.writeText(`${origin}/public/${node.public_link_token}`); toast.success("Signal link copied");}}>
                         <Copy size={12} className="mr-2" /> COPY_LINK
                     </VaultButton>
                     <VaultButton size="sm" variant="destructive" className="flex-1 h-12 text-[10px]" onClick={handleRevokePublic}>

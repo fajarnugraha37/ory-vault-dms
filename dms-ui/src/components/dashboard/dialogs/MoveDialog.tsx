@@ -10,11 +10,13 @@ import {
   DialogFooter
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { VaultButton } from "@/components/shared/VaultPrimitives";
 import { MoveRight, Database, ChevronRight } from "lucide-react";
 import { api } from "@/lib/api";
 import { useVault } from "@/context/VaultContext";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 
 export const MoveDialog = ({ open, onOpenChange, node }: { open: boolean, onOpenChange: (o: boolean) => void, node: any }) => {
   const { mutateNodes } = useVault();
@@ -23,10 +25,15 @@ export const MoveDialog = ({ open, onOpenChange, node }: { open: boolean, onOpen
 
   const onExecuteMove = async () => {
     if (!node) return;
+    const target = targetParentId.trim();
+    if (target !== "" && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(target)) {
+        toast.error("Invalid Parent UUID format");
+        return;
+    }
     setLoading(true);
     try {
         await api.put(`/api/nodes/${node.id}/move`, { 
-            parent_id: targetParentId.trim() === "" ? null : targetParentId 
+            parent_id: target === "" ? null : target 
         });
         toast.success("Identity relocation successful");
         mutateNodes();
@@ -109,10 +116,4 @@ export const MoveDialog = ({ open, onOpenChange, node }: { open: boolean, onOpen
   );
 };
 
-function cn(...inputs: any[]) {
-  return inputs.filter(Boolean).join(" ");
-}
 
-function Label({ children, className }: { children: React.ReactNode, className?: string }) {
-    return <label className={cn("text-xs font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70", className)}>{children}</label>
-}

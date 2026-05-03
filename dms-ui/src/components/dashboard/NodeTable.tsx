@@ -9,7 +9,9 @@ import {
   Trash2, 
   Download, 
   Edit2,
-  Move
+  Move,
+  ArrowUp,
+  ArrowDown
 } from "lucide-react";
 import {
   Table,
@@ -40,15 +42,20 @@ interface Node {
   size_bytes?: number;
 }
 
+export type NodeActionType = "download" | "rename" | "move" | "share" | "delete";
+
 interface NodeTableProps {
   nodes: any[]; // Use any temporarily to bypass the "Two types with same name" issue if needed, 
                 // or just fix the interface to be compatible.
   onNavigate: (id: string) => void;
-  onAction: (action: string, node: any) => void;
+  onAction: (action: NodeActionType, node: any) => void;
   isLoading?: boolean;
+  sortBy?: string;
+  sortOrder?: 'asc' | 'desc';
+  onSort?: (field: string) => void;
 }
 
-export function NodeTable({ nodes, onNavigate, onAction, isLoading }: NodeTableProps) {
+export function NodeTable({ nodes, onNavigate, onAction, isLoading, sortBy, sortOrder, onSort }: NodeTableProps) {
   if (!isLoading && nodes.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-32 space-y-4">
@@ -67,10 +74,42 @@ export function NodeTable({ nodes, onNavigate, onAction, isLoading }: NodeTableP
       <Table>
         <TableHeader>
           <TableRow className="border-b border-white/[0.06] hover:bg-transparent">
-            <TableHead className="w-[50%] text-foreground-muted font-medium text-[10px] uppercase tracking-widest py-4">Name</TableHead>
-            <TableHead className="text-foreground-muted font-medium text-[10px] uppercase tracking-widest py-4">Type</TableHead>
-            <TableHead className="text-foreground-muted font-medium text-[10px] uppercase tracking-widest py-4">Size</TableHead>
-            <TableHead className="text-foreground-muted font-medium text-[10px] uppercase tracking-widest py-4">Modified</TableHead>
+            <TableHead 
+              className="w-[50%] text-foreground-muted font-medium text-[10px] uppercase tracking-widest py-4 cursor-pointer hover:text-white transition-colors"
+              onClick={() => onSort?.('name')}
+            >
+              <div className="flex items-center gap-1">
+                Name
+                {sortBy === 'name' && (sortOrder === 'asc' ? <ArrowUp size={12} /> : <ArrowDown size={12} />)}
+              </div>
+            </TableHead>
+            <TableHead 
+              className="text-foreground-muted font-medium text-[10px] uppercase tracking-widest py-4 cursor-pointer hover:text-white transition-colors"
+              onClick={() => onSort?.('type')}
+            >
+              <div className="flex items-center gap-1">
+                Type
+                {sortBy === 'type' && (sortOrder === 'asc' ? <ArrowUp size={12} /> : <ArrowDown size={12} />)}
+              </div>
+            </TableHead>
+            <TableHead 
+              className="text-foreground-muted font-medium text-[10px] uppercase tracking-widest py-4 cursor-pointer hover:text-white transition-colors"
+              onClick={() => onSort?.('size')}
+            >
+              <div className="flex items-center gap-1">
+                Size
+                {sortBy === 'size' && (sortOrder === 'asc' ? <ArrowUp size={12} /> : <ArrowDown size={12} />)}
+              </div>
+            </TableHead>
+            <TableHead 
+              className="text-foreground-muted font-medium text-[10px] uppercase tracking-widest py-4 cursor-pointer hover:text-white transition-colors"
+              onClick={() => onSort?.('date')}
+            >
+              <div className="flex items-center gap-1">
+                Modified
+                {sortBy === 'date' && (sortOrder === 'asc' ? <ArrowUp size={12} /> : <ArrowDown size={12} />)}
+              </div>
+            </TableHead>
             <TableHead className="w-[50px]"></TableHead>
           </TableRow>
         </TableHeader>
@@ -118,7 +157,7 @@ export function NodeTable({ nodes, onNavigate, onAction, isLoading }: NodeTableP
                   {new Date(node.updated_at).toLocaleDateString()}
                 </TableCell>
                 <TableCell onClick={(e) => e.stopPropagation()}>
-                  <DropdownMenu>
+                  <DropdownMenu modal={false}>
                     <DropdownMenuTrigger asChild>
                       <button className="p-2 text-foreground-muted hover:text-white transition-colors rounded-lg hover:bg-white/[0.05]">
                         <MoreVertical size={16} />

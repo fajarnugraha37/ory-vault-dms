@@ -143,6 +143,7 @@ func NewRouter(s *store.Store, k *kratos.Client, st *storage.Storage, kc *keto.C
 		r.Delete("/identities/{id}", adminHandler.DeleteIdentity)
 		r.Put("/identities/{id}/state", adminHandler.PatchState)
 		r.Patch("/identities/{id}/traits", adminHandler.PatchTraits)
+		r.Patch("/identities/{id}/metadata", adminHandler.PatchMetadataAdmin)
 		r.Post("/identities/{id}/recovery", adminHandler.PostRecovery)
 		r.Post("/identities/{id}/verify", adminHandler.PostVerify)
 		r.Post("/identities/{id}/impersonate", adminHandler.ImpersonateSubject)

@@ -122,6 +122,19 @@ func (h *AdminHandler) PatchTraits(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+func (h *AdminHandler) PatchMetadataAdmin(w http.ResponseWriter, r *http.Request) {
+	adminID := r.Context().Value(middleware.UserIDKey).(string)
+	id := chi.URLParam(r, "id")
+	var metadata map[string]interface{}
+	json.NewDecoder(r.Body).Decode(&metadata)
+
+	patch := []client.JsonPatch{{Op: "replace", Path: "/metadata_admin", Value: metadata}}
+	err := h.Kratos.PatchIdentity(r.Context(), id, patch)
+	if err != nil { h.respondWithError(w, 500, err.Error()); return }
+	h.Store.SaveAuditLog(r.Context(), adminID, "UPDATE_METADATA", id, "Identity metadata updated", r.RemoteAddr, r.UserAgent())
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (h *AdminHandler) ImpersonateSubject(w http.ResponseWriter, r *http.Request) {
 	adminID := r.Context().Value(middleware.UserIDKey).(string)
 	id := chi.URLParam(r, "id")

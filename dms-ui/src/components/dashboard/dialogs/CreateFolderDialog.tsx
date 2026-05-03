@@ -21,10 +21,13 @@ export function CreateFolderDialog({ open, onOpenChange }: { open: boolean, onOp
   const { currentFolder, mutateNodes } = useVault();
 
   const handleCreate = async () => {
-    if (!name) return;
+    if (!name.trim()) {
+      toast.error("Folder name cannot be empty");
+      return;
+    }
     setLoading(true);
     try {
-      await api.post("/api/nodes/folder", { name, parent_id: currentFolder });
+      await api.post("/api/nodes", { name, parent_id: currentFolder });
       toast.success("Folder created successfully");
       mutateNodes();
       setName("");

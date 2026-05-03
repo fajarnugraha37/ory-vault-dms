@@ -25,7 +25,11 @@ export function RenameDialog({ open, onOpenChange, node }: { open: boolean, onOp
   }, [node]);
 
   const handleRename = async () => {
-    if (!name || !node) return;
+    if (!name.trim()) {
+      toast.error("Name cannot be empty");
+      return;
+    }
+    if (!node) return;
     setLoading(true);
     try {
       await api.put(`/api/nodes/${node.id}/rename`, { name });

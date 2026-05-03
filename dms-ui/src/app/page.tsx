@@ -1,7 +1,10 @@
 "use client";
 
-import React from "react";
+import React, { useEffect } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import useSWR from "swr";
+import { fetcher } from "@/lib/api";
 import { motion } from "framer-motion";
 import { 
   Shield, 
@@ -16,6 +19,15 @@ import {
 import { VaultCard, VaultButton } from "@/components/shared/VaultPrimitives";
 
 export default function LandingPage() {
+  const { data: me } = useSWR('/api/me', fetcher);
+  const router = useRouter();
+
+  useEffect(() => {
+    if (me) {
+      router.push('/dashboard/documents');
+    }
+  }, [me, router]);
+
   return (
     <div className="relative min-h-screen">
       {/* Hero Section */}

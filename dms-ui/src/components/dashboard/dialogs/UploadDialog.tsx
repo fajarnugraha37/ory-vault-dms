@@ -24,6 +24,11 @@ export const UploadDialog = ({ open, onOpenChange, nodeId }: { open: boolean, on
 
   const handleUpload = async () => {
     if (!file) return;
+    const MAX_SIZE = 50 * 1024 * 1024; // 50MB
+    if (file.size > MAX_SIZE) {
+        toast.error("File exceeds maximum allowed size (50MB).");
+        return;
+    }
     setIsUploading(true);
     setUploadProgress(0);
     const formData = new FormData();

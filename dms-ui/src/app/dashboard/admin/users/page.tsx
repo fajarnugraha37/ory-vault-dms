@@ -43,7 +43,8 @@ import {
   Trash2,
   RefreshCcw,
   Power,
-  Edit3
+  Edit3,
+  Plus
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -75,19 +76,43 @@ export default function AdminControlPage() {
     `/admin-api/audit?limit=${limit}&offset=${auditPage * limit}`,
     fetcher
   );
+  const { data: availableRoles } = useSWR("/admin-api/roles", fetcher);
 
   const [selectedUser, setSelectedUser] = useState<any>(null);
   const [newRole, setNewRole] = useState("");
   const [bulkDays, setBulkDays] = useState("30");
 
+  const [editingTrait, setEditingTrait] = useState<string | null>(null);
+  const [editingValue, setEditingValue] = useState("");
+  const [metadataValue, setMetadataValue] = useState("");
+
+  const [confirmDialog, setConfirmDialog] = useState<{ open: boolean, title: string, message: string, onConfirm: () => void } | null>(null);
+  const [expandedAudit, setExpandedAudit] = useState<string | null>(null);
+  const [isCreateRoleOpen, setIsCreateRoleOpen] = useState(false);
+  const [newRoleData, setNewRoleData] = useState({ id: "", description: "" });
+
+  useEffect(() => {
+    if (selectedUser) {
+      setMetadataValue(JSON.stringify(selectedUser.metadata_admin || {}, null, 2));
+    }
+  }, [selectedUser]);
+
   const handleUpdateState = async (id: string, currentState: string) => {
     const newState = currentState === "active" ? "inactive" : "active";
-    try {
-      await api.put(`/admin-api/identities/${id}/state`, { state: newState });
-      toast.success(`Identity status updated to ${newState}`);
-      mutateUsers();
-      if (selectedUser?.id === id) setSelectedUser({...selectedUser, state: newState});
-    } catch (e) { toast.error("Failed to update status"); }
+    setConfirmDialog({
+      open: true,
+      title: "STATE_CHANGE_PROTOCOL",
+      message: `Are you sure you want to ${newState === 'active' ? 'ACTIVATE' : 'DEACTIVATE'} this identity subject? This will affect their access to all vault resources.`,
+      onConfirm: async () => {
+        try {
+          await api.put(`/admin-api/identities/${id}/state`, { state: newState });
+          toast.success(`Identity status updated to ${newState}`);
+          mutateUsers();
+          if (selectedUser?.id === id) setSelectedUser({...selectedUser, state: newState});
+        } catch (e) { toast.error("Failed to update status"); }
+        setConfirmDialog(null);
+      }
+    });
   };
 
   const handleAssignRole = async () => {
@@ -130,6 +155,31 @@ export default function AdminControlPage() {
     } catch (e) { toast.error("Failed to generate link"); }
   };
 
+  const handleUpdateTrait = async () => {
+    if (!selectedUser || !editingTrait) return;
+    try {
+      const updatedTraits = { ...selectedUser.traits, [editingTrait]: editingValue };
+      await api.patch(`/admin-api/identities/${selectedUser.id}/traits`, updatedTraits);
+      toast.success(`Trait ${editingTrait} updated`);
+      setEditingTrait(null);
+      mutateUsers();
+      const { data: updated } = await api.get(`/admin-api/identities/${selectedUser.id}`);
+      setSelectedUser(updated);
+    } catch (e) { toast.error("Failed to update trait"); }
+  };
+
+  const handleUpdateMetadata = async () => {
+    if (!selectedUser) return;
+    try {
+      const parsed = JSON.parse(metadataValue);
+      await api.patch(`/admin-api/identities/${selectedUser.id}/metadata`, parsed);
+      toast.success("Metadata updated");
+      mutateUsers();
+      const { data: updated } = await api.get(`/admin-api/identities/${selectedUser.id}`);
+      setSelectedUser(updated);
+    } catch (e) { toast.error("Invalid JSON or update failed"); }
+  };
+
   return (
     <div className="pb-20">
       <Navbar />
@@ -143,6 +193,7 @@ export default function AdminControlPage() {
         <Tabs defaultValue="users" className="w-full">
           <TabsList className="bg-white/[0.03] border border-white/[0.06] p-1 rounded-xl mb-12">
             <TabsTrigger value="users" className="px-8 text-xs font-medium uppercase tracking-widest">Subjects</TabsTrigger>
+            <TabsTrigger value="roles_mgmt" className="px-8 text-xs font-medium uppercase tracking-widest">Roles</TabsTrigger>
             <TabsTrigger value="audit" className="px-8 text-xs font-medium uppercase tracking-widest">Audit_Log</TabsTrigger>
             <TabsTrigger value="ops" className="px-8 text-xs font-medium uppercase tracking-widest">Infra_Ops</TabsTrigger>
           </TabsList>
@@ -226,6 +277,47 @@ export default function AdminControlPage() {
             </div>
           </TabsContent>
 
+          <TabsContent value="roles_mgmt" className="space-y-6">
+             <div className="flex justify-end">
+                <VaultButton variant="primary" size="sm" onClick={() => setIsCreateRoleOpen(true)}>
+                    <Plus size={14} className="mr-2" /> CREATE_NEW_ROLE
+                </VaultButton>
+             </div>
+             <VaultCard className="p-0 border-white/[0.06] overflow-hidden">
+                <Table>
+                    <TableHeader className="bg-white/[0.02]">
+                        <TableRow className="border-b border-white/[0.06]">
+                            <TableHead className="pl-8 text-[10px] uppercase font-mono py-4">Role_ID</TableHead>
+                            <TableHead className="text-[10px] uppercase font-mono py-4">Description</TableHead>
+                            <TableHead className="text-right pr-8"></TableHead>
+                        </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                        {availableRoles?.map((role: any) => (
+                            <TableRow key={role.id} className="border-b border-white/[0.02]">
+                                <TableCell className="pl-8 py-4">
+                                    <span className="text-sm font-mono text-accent-bright font-bold uppercase">{role.id}</span>
+                                </TableCell>
+                                <TableCell className="text-xs text-foreground-muted">{role.description}</TableCell>
+                                <TableCell className="text-right pr-8">
+                                    <VaultButton variant="ghost" size="sm" className="text-red-400 hover:text-red-300" onClick={async () => {
+                                        if (!confirm("Delete this role?")) return;
+                                        try {
+                                            await api.delete(`/admin-api/roles/${role.id}`);
+                                            toast.success("Role deleted");
+                                            mutateUsers();
+                                        } catch (e) { toast.error("Failed to delete role"); }
+                                    }}>
+                                        <Trash2 size={14} />
+                                    </VaultButton>
+                                </TableCell>
+                            </TableRow>
+                        ))}
+                    </TableBody>
+                </Table>
+             </VaultCard>
+          </TabsContent>
+
           <TabsContent value="audit">
              <VaultCard className="p-0 overflow-hidden border-white/[0.06]">
                 <Table>
@@ -239,12 +331,50 @@ export default function AdminControlPage() {
                     </TableHeader>
                     <TableBody>
                         {auditLogs?.map((log: any) => (
-                            <TableRow key={log.id} className="border-b border-white/[0.02]">
-                                <TableCell className="pl-8 text-xs font-mono text-foreground-muted">{new Date(log.created_at).toLocaleString()}</TableCell>
-                                <TableCell><VaultBadge>{log.action}</VaultBadge></TableCell>
-                                <TableCell className="text-xs text-foreground/80 font-mono tracking-tighter">{log.target_id?.substring(0,12)}...</TableCell>
-                                <TableCell className="text-xs font-mono text-foreground-subtle">{log.ip_address}</TableCell>
-                            </TableRow>
+                            <React.Fragment key={log.id}>
+                                <TableRow 
+                                    className="border-b border-white/[0.02] cursor-pointer hover:bg-white/[0.02] transition-colors"
+                                    onClick={() => setExpandedAudit(expandedAudit === log.id ? null : log.id)}
+                                >
+                                    <TableCell className="pl-8 text-xs font-mono text-foreground-muted">{new Date(log.timestamp).toLocaleString()}</TableCell>
+                                    <TableCell><VaultBadge>{log.action}</VaultBadge></TableCell>
+                                    <TableCell className="text-xs text-foreground/80 font-mono tracking-tighter">{log.target_id?.substring(0,12)}...</TableCell>
+                                    <TableCell className="text-xs font-mono text-foreground-subtle">{log.ip_address}</TableCell>
+                                </TableRow>
+                                <AnimatePresence>
+                                    {expandedAudit === log.id && (
+                                        <TableRow className="bg-white/[0.01] border-b border-white/[0.02]">
+                                            <TableCell colSpan={4} className="p-0">
+                                                <motion.div 
+                                                    initial={{ height: 0, opacity: 0 }}
+                                                    animate={{ height: "auto", opacity: 1 }}
+                                                    exit={{ height: 0, opacity: 0 }}
+                                                    className="overflow-hidden"
+                                                >
+                                                    <div className="p-8 space-y-4">
+                                                        <div className="grid grid-cols-2 gap-8">
+                                                            <div className="space-y-2">
+                                                                <Label className="text-[9px] uppercase font-mono text-foreground-subtle">Admin_ID</Label>
+                                                                <div className="text-xs font-mono text-white">{log.admin_id}</div>
+                                                            </div>
+                                                            <div className="space-y-2">
+                                                                <Label className="text-[9px] uppercase font-mono text-foreground-subtle">User_Agent</Label>
+                                                                <div className="text-[10px] font-mono text-foreground-muted break-all">{log.user_agent}</div>
+                                                            </div>
+                                                        </div>
+                                                        <div className="space-y-2">
+                                                            <Label className="text-[9px] uppercase font-mono text-foreground-subtle">Details_Payload</Label>
+                                                            <pre className="p-4 bg-black/40 rounded-xl border border-white/[0.06] text-[10px] font-mono text-accent-bright overflow-x-auto">
+                                                                {JSON.stringify(log.details, null, 2)}
+                                                            </pre>
+                                                        </div>
+                                                    </div>
+                                                </motion.div>
+                                            </TableCell>
+                                        </TableRow>
+                                    )}
+                                </AnimatePresence>
+                            </React.Fragment>
                         ))}
                     </TableBody>
                 </Table>
@@ -264,7 +394,7 @@ export default function AdminControlPage() {
                     </div>
                     <VaultButton variant="destructive" className="w-full" onClick={async () => {
                          try {
-                            await api.post(`/admin-api/ops/cleanup?days=${bulkDays}`);
+                            await api.post(`/admin-api/bulk/cleanup?days=${bulkDays}`);
                             toast.success("Cleanup protocol executed");
                           } catch (e) { toast.error("Cleanup failed"); }
                     }}>
@@ -273,23 +403,106 @@ export default function AdminControlPage() {
                 </div>
              </VaultCard>
 
-             <VaultCard className="space-y-6 p-8">
-                <div className="flex items-center gap-3 text-accent">
-                    <Database size={20} />
-                    <h3 className="font-semibold tracking-tight">Infrastructure_Seeding</h3>
-                </div>
-                <div className="p-6 border border-dashed border-white/10 rounded-2xl text-center">
-                    <UploadCloud size={32} className="mx-auto text-foreground-muted/20 mb-3" />
-                    <p className="text-[10px] text-foreground-muted uppercase tracking-widest">CSV_IMPORT_PENDING</p>
-                </div>
-                <VaultButton variant="secondary" className="w-full" disabled>
-                    INITIALIZE_BULK_PROVISION
-                </VaultButton>
-             </VaultCard>
-          </TabsContent>
-        </Tabs>
+              <VaultCard className="space-y-6 p-8">
+                 <div className="flex items-center gap-3 text-accent">
+                     <Database size={20} />
+                     <h3 className="font-semibold tracking-tight">Infrastructure_Seeding</h3>
+                 </div>
+                 <div 
+                    className="p-6 border border-dashed border-white/10 rounded-2xl text-center cursor-pointer hover:bg-white/[0.02] transition-colors"
+                    onClick={() => document.getElementById('bulk-import')?.click()}
+                 >
+                     <UploadCloud size={32} className="mx-auto text-foreground-muted/20 mb-3" />
+                     <p className="text-[10px] text-foreground-muted uppercase tracking-widest">CSV_IMPORT_PENDING</p>
+                     <input 
+                        id="bulk-import" 
+                        type="file" 
+                        className="hidden" 
+                        accept=".json"
+                        onChange={async (e) => {
+                            const file = e.target.files?.[0];
+                            if (!file) return;
+                            try {
+                                const text = await file.text();
+                                const data = JSON.parse(text);
+                                await api.post("/admin-api/bulk/import", data);
+                                toast.success("Bulk import protocol completed");
+                                mutateUsers();
+                            } catch (e) { toast.error("Import failed: Invalid JSON format"); }
+                        }}
+                    />
+                 </div>
+                 <VaultButton variant="secondary" className="w-full" onClick={() => document.getElementById('bulk-import')?.click()}>
+                     INITIALIZE_BULK_PROVISION
+                 </VaultButton>
+              </VaultCard>
+           </TabsContent>
+         </Tabs>
 
-        {/* --- USER DETAIL DIALOG --- */}
+         <Dialog open={!!confirmDialog} onOpenChange={(o) => !o && setConfirmDialog(null)}>
+            <DialogContent className="sm:max-w-[425px] bg-background-elevated border-white/[0.08] backdrop-blur-3xl">
+                <DialogHeader>
+                    <DialogTitle className="flex items-center gap-2 text-red-400">
+                        <ShieldCheck size={18} />
+                        {confirmDialog?.title}
+                    </DialogTitle>
+                </DialogHeader>
+                <div className="py-4">
+                    <p className="text-sm text-foreground-muted leading-relaxed uppercase tracking-tight">
+                        {confirmDialog?.message}
+                    </p>
+                </div>
+                <div className="flex justify-end gap-3 pt-2">
+                    <VaultButton variant="ghost" size="sm" onClick={() => setConfirmDialog(null)}>ABORT</VaultButton>
+                    <VaultButton variant="primary" size="sm" className="bg-red-500 hover:bg-red-600 border-red-500/50" onClick={confirmDialog?.onConfirm}>CONFIRM_EXECUTION</VaultButton>
+                </div>
+            </DialogContent>
+         </Dialog>
+
+         <Dialog open={isCreateRoleOpen} onOpenChange={setIsCreateRoleOpen}>
+            <DialogContent className="sm:max-w-[425px] bg-background-elevated border-white/[0.08] backdrop-blur-3xl">
+                <DialogHeader>
+                    <DialogTitle className="flex items-center gap-2 text-white">
+                        <ShieldCheck size={18} className="text-accent" />
+                        INITIALIZE_NEW_ROLE
+                    </DialogTitle>
+                </DialogHeader>
+                <div className="grid gap-4 py-4">
+                    <div className="space-y-2">
+                        <Label className="text-[10px] uppercase font-mono text-foreground-subtle">Role_Identifier</Label>
+                        <Input 
+                            value={newRoleData.id} 
+                            onChange={e => setNewRoleData({...newRoleData, id: e.target.value})}
+                            placeholder="e.g. compliance_officer"
+                            className="bg-white/[0.03] border-white/[0.06] h-12"
+                        />
+                    </div>
+                    <div className="space-y-2">
+                        <Label className="text-[10px] uppercase font-mono text-foreground-subtle">Description</Label>
+                        <Input 
+                            value={newRoleData.description} 
+                            onChange={e => setNewRoleData({...newRoleData, description: e.target.value})}
+                            placeholder="Brief protocol description..."
+                            className="bg-white/[0.03] border-white/[0.06] h-12"
+                        />
+                    </div>
+                </div>
+                <div className="flex justify-end gap-3 pt-2">
+                    <VaultButton variant="ghost" size="sm" onClick={() => setIsCreateRoleOpen(false)}>ABORT</VaultButton>
+                    <VaultButton variant="primary" size="sm" onClick={async () => {
+                        try {
+                            await api.post("/admin-api/roles", newRoleData);
+                            toast.success("Role created successfully");
+                            mutateUsers();
+                            setIsCreateRoleOpen(false);
+                            setNewRoleData({ id: "", description: "" });
+                        } catch (e) { toast.error("Failed to create role"); }
+                    }}>COMMIT_ROLE</VaultButton>
+                </div>
+            </DialogContent>
+         </Dialog>
+
+         {/* --- USER DETAIL DIALOG --- */}
         <Dialog open={!!selectedUser} onOpenChange={(o) => !o && setSelectedUser(null)}>
           <DialogContent className="max-w-2xl bg-background-elevated border-white/[0.08] p-0 overflow-hidden backdrop-blur-3xl">
              <div className="bg-accent/5 p-8 border-b border-white/[0.06]">
@@ -313,6 +526,7 @@ export default function AdminControlPage() {
                 <Tabs defaultValue="traits">
                     <TabsList className="bg-white/[0.03] border border-white/[0.06] mb-8">
                         <TabsTrigger value="traits" className="text-[10px] uppercase">Traits</TabsTrigger>
+                        <TabsTrigger value="metadata" className="text-[10px] uppercase">Metadata</TabsTrigger>
                         <TabsTrigger value="roles" className="text-[10px] uppercase">RBAC_Roles</TabsTrigger>
                         <TabsTrigger value="sessions" className="text-[10px] uppercase">Active_Sessions</TabsTrigger>
                         <TabsTrigger value="security" className="text-[10px] uppercase text-red-400">Security</TabsTrigger>
@@ -322,18 +536,59 @@ export default function AdminControlPage() {
                         {selectedUser && Object.entries(selectedUser.traits || {}).map(([k, v]: [string, any]) => (
                             <div key={k} className="p-4 bg-white/[0.02] border border-white/[0.06] rounded-xl group hover:border-white/10 transition-colors">
                                 <Label className="text-[9px] uppercase font-mono text-foreground-subtle block mb-1">{k}</Label>
-                                <div className="flex justify-between items-center">
-                                    <p className="text-sm font-medium text-white truncate">{String(v)}</p>
-                                    <Edit3 size={12} className="text-foreground-muted opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer" />
-                                </div>
+                                {editingTrait === k ? (
+                                    <div className="flex gap-2 mt-1">
+                                        <Input 
+                                            value={editingValue} 
+                                            onChange={e => setEditingValue(e.target.value)}
+                                            className="h-8 text-xs bg-white/[0.05]"
+                                            autoFocus
+                                        />
+                                        <VaultButton size="sm" className="h-8 px-2" onClick={handleUpdateTrait}>SAVE</VaultButton>
+                                        <VaultButton variant="secondary" size="sm" className="h-8 px-2" onClick={() => setEditingTrait(null)}>X</VaultButton>
+                                    </div>
+                                ) : (
+                                    <div className="flex justify-between items-center">
+                                        <p className="text-sm font-medium text-white truncate">{String(v)}</p>
+                                        <Edit3 
+                                            size={12} 
+                                            className="text-foreground-muted opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer hover:text-accent" 
+                                            onClick={() => {
+                                                setEditingTrait(k);
+                                                setEditingValue(String(v));
+                                            }}
+                                        />
+                                    </div>
+                                )}
                             </div>
                         ))}
                     </TabsContent>
 
+                    <TabsContent value="metadata" className="space-y-4">
+                        <div className="space-y-2">
+                            <Label className="text-[10px] uppercase font-mono text-foreground-subtle">Admin_Metadata (JSON)</Label>
+                            <textarea 
+                                value={metadataValue}
+                                onChange={e => setMetadataValue(e.target.value)}
+                                className="w-full h-48 bg-white/[0.02] border border-white/[0.06] rounded-xl p-4 font-mono text-xs text-foreground-muted focus:outline-none focus:border-accent resize-none"
+                            />
+                        </div>
+                        <VaultButton className="w-full" onClick={handleUpdateMetadata}>UPDATE_METADATA_PROTOCOL</VaultButton>
+                    </TabsContent>
+
                     <TabsContent value="roles" className="space-y-6">
                         <div className="flex gap-2">
-                            <Input value={newRole} onChange={e => setNewRole(e.target.value)} placeholder="e.g. administrator" className="bg-white/[0.02] border-white/[0.06] h-12" />
-                            <VaultButton onClick={handleAssignRole}>GRANT</VaultButton>
+                            <select 
+                                value={newRole} 
+                                onChange={e => setNewRole(e.target.value)} 
+                                className="flex-1 bg-white/[0.02] border border-white/[0.06] rounded-lg px-3 text-sm text-white focus:outline-none focus:border-accent h-12"
+                            >
+                                <option value="" disabled className="bg-background-elevated text-foreground-muted">Select a role to assign...</option>
+                                {availableRoles?.filter((r: any) => !selectedUser?.roles?.includes(r.id)).map((r: any) => (
+                                    <option key={r.id} value={r.id} className="bg-background-elevated text-white">{r.id}</option>
+                                ))}
+                            </select>
+                            <VaultButton onClick={handleAssignRole} disabled={!newRole}>GRANT</VaultButton>
                         </div>
                         <div className="space-y-2">
                             {selectedUser?.roles?.map((r: string) => (
@@ -344,6 +599,9 @@ export default function AdminControlPage() {
                                     </button>
                                 </div>
                             ))}
+                            {!selectedUser?.roles?.length && (
+                                <div className="text-center py-10 text-foreground-muted/20 font-mono text-[10px] uppercase">Zero_Roles_Assigned</div>
+                            )}
                         </div>
                     </TabsContent>
 

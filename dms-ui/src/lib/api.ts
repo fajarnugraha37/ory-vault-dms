@@ -15,13 +15,15 @@ api.interceptors.response.use(
   (error) => {
     if (error.response?.status === 401) {
       // Avoid infinite toast loops on login page
-      if (!window.location.pathname.includes("/auth/login")) {
+      if (typeof window !== 'undefined' && !window.location.pathname.includes("/auth/login")) {
         toast.error("SESSION_EXPIRED: Re-authentication protocol required.", {
             description: "Your secure session has ended. Redirecting...",
             duration: 3000,
         });
         setTimeout(() => {
-            window.location.href = "/auth/login";
+            if (typeof window !== 'undefined') {
+                window.location.href = "/auth/login";
+            }
         }, 2000);
       }
     }

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useRef } from "react";
+import React, { useRef, useCallback } from "react";
 import { motion, HTMLMotionProps } from "framer-motion";
 import { cn } from "@/lib/utils";
 
@@ -19,14 +19,14 @@ export function VaultCard({
 }: VaultCardProps) {
   const cardRef = useRef<HTMLDivElement>(null);
 
-  const onMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+  const onMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     if (!spotlight || !cardRef.current) return;
     const { left, top } = cardRef.current.getBoundingClientRect();
     const x = e.clientX - left;
     const y = e.clientY - top;
     cardRef.current.style.setProperty("--x", `${x}px`);
     cardRef.current.style.setProperty("--y", `${y}px`);
-  };
+  }, [spotlight]);
 
   return (
     <div
@@ -99,7 +99,7 @@ export function VaultButton({
       {...props}
     >
       {variant === "primary" && (
-        <div className="absolute inset-0 w-[200%] h-full bg-gradient-to-r from-transparent via-white/10 to-transparent -translate-x-full group-hover:animate-[shine_1.5s_ease-in-out_infinite]" />
+        <div className="absolute inset-0 w-[200%] h-full bg-gradient-to-r from-transparent via-white/10 to-transparent -translate-x-full animate-shine" />
       )}
       
       {isLoading ? (
