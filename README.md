@@ -1,16 +1,16 @@
-# ORY-VAULT DMS
+# ORY-ZTA
 
-A **Secure Document Management System (DMS)** with 3rd-party delegation built natively on the **Ory Stack**, **Go**, and **Next.js**.
+A **Document Management System (DUMMY)** with 3rd-party delegation built natively on the **Ory Stack**, **Go**, and **Next.js**.
 
-The system implements a **Zero-Trust** edge proxy architecture to completely separate identity, authentication, authorization, and 3rd-party access delegation from the core backend logic. It enforces a highly granular permission model (Google Zanzibar) using Ory Keto.
+The system implements a **Zero-Trust** edge proxy architecture to completely separate identity, authentication, authorization, and 3rd-party access delegation from the core backend logic. It enforces a highly granular permission model using Ory Keto.
 
 ## Architecture & Core Components
 
 1. **Ingress Layer (Nginx)**: Hardened gateway with HTTPS and dynamic DNS resolution for upstream container churn.
 2. **Security Edge Proxy (Ory Oathkeeper)**: Identity-Aware Proxy (IAP) handling JWT transformation (Signed RS256) and session-to-token mutation.
 3. **Identity Provider (Ory Kratos)**: Handles all user data, MFA, and lifecycle. Supported by a **Courier worker** for reliable asynchronous email delivery.
-4. **Permissions Engine (Ory Keto)**: Enforces access control lists (ACL) using Zanzibar OPL via gRPC.
-5. **Delegation (Ory Hydra)**: OAuth2 provider allowing 3rd-party clients to access DMS APIs securely.
+4. **Permissions Engine (Ory Keto)**: Enforces access control lists (ACL) using OPL via gRPC.
+5. **Delegation (Ory Hydra)**: OAuth2 provider allowing 3rd-party clients to access DMS APIs.
 6. **Enterprise Backend (Go 1.24)**: Modular Chi-based API with official Ory SDK integration, persistent PostgreSQL audit logging, and Unified Node Architecture.
 7. **Frontend UI (Next.js)**: Modern control plane using **Shadcn UI**, SSG, and centralized API utilities.
 8. **Database (PostgreSQL 16)**: Multi-schema design (`app`, `kratos`, `keto`, `hydra`, `enterprise`) for total data isolation.
@@ -90,7 +90,7 @@ A simulation app for testing 3rd-party integration is available in the repositor
 │       └── store/          # Modular Persistence (Unified Nodes)
 ├── dms-ui/                 # Next.js Frontend
 ├── tools/                  # Integration Test Toolkit (Bun.js)
-└── contrib/config          # Ory Stack Production Configs
+└── contrib/config          # Ory Stack  Configs
 ```
 
 ## License
